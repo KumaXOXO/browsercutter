@@ -1,5 +1,5 @@
 // src/components/panels/BpmPanel.tsx
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useAppStore } from '../../store/useAppStore'
 import { PanelLabel } from './TextPanel'
 import type { BpmMode, SegmentLength } from '../../types'
@@ -21,6 +21,11 @@ const SEGMENT_LENGTHS: { value: SegmentLength; label: string }[] = [
 export default function BpmPanel() {
   const { bpmConfig, clips, updateBpmConfig } = useAppStore()
   const [detecting, setDetecting] = useState(false)
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
   const videoClips = clips.filter((c) => c.type === 'video')
 
   return (
@@ -94,9 +99,9 @@ export default function BpmPanel() {
               setDetecting(true)
               try {
                 const detected = await detectBpm(targetClip.file)
-                updateBpmConfig({ bpm: detected })
-              } catch {
-                // silently ignore — user keeps manual value
+                if (mountedRef.current) updateBpmConfig({ bpm: detected })
+              } catch (err) {
+                if (import.meta.env.DEV) console.error('[BpmDetector]', err)
               } finally {
                 setDetecting(false)
               }
