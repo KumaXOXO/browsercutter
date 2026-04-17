@@ -1,13 +1,7 @@
 // src/components/preview/PlaybackControls.tsx
 import { SkipBack, Play, Pause, SkipForward, Volume2 } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
-
-function formatTime(s: number): string {
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const sec = Math.floor(s % 60)
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-}
+import { formatTime } from '../../lib/utils'
 
 export default function PlaybackControls() {
   const { isPlaying, playheadPosition, segments, setIsPlaying, setPlayheadPosition } = useAppStore()
