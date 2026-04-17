@@ -69,8 +69,9 @@ export default function VideoPreview() {
   // Seek when playhead moves while paused
   useEffect(() => {
     const video = videoRef.current
-    if (isPlaying || !video || !activeSeg) return
-    video.currentTime = activeSeg.inPoint + (playheadPosition - activeSeg.startOnTimeline)
+    const seg = activeSegRef.current
+    if (isPlaying || !video || !seg) return
+    video.currentTime = seg.inPoint + (playheadPosition - seg.startOnTimeline)
   }, [playheadPosition]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // RAF playback loop
@@ -106,6 +107,7 @@ export default function VideoPreview() {
           const nextClip = clipsRef.current.find((c) => c.id === nextSeg.clipId)
           if (nextClip?.file) {
             if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+            objectUrlRef.current = null
             const url = URL.createObjectURL(nextClip.file)
             objectUrlRef.current = url
             videoRef.current.src = url
