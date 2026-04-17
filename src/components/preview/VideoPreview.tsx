@@ -57,6 +57,13 @@ export default function VideoPreview() {
     const url = URL.createObjectURL(activeClip.file)
     objectUrlRef.current = url
     video.src = url
+
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current)
+        objectUrlRef.current = null
+      }
+    }
   }, [activeClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Seek when playhead moves while paused
