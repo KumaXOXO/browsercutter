@@ -20,7 +20,7 @@ const SEGMENT_LENGTHS: { value: SegmentLength; label: string }[] = [
 ]
 
 export default function BpmPanel() {
-  const { bpmConfig, clips, updateBpmConfig, replaceSegments } = useAppStore()
+  const { bpmConfig, clips, updateBpmConfig, replaceSegments, setPlayheadPosition, setIsPlaying } = useAppStore()
   const [detecting, setDetecting] = useState(false)
   const mountedRef = useRef(true)
   useEffect(() => {
@@ -187,7 +187,11 @@ export default function BpmPanel() {
         onMouseUp={(e)    => { e.currentTarget.style.transform = 'translateY(-2px)' }}
         onClick={() => {
           const newSegments = generateCut(clips, bpmConfig)
-          if (newSegments.length > 0) replaceSegments(newSegments)
+          if (newSegments.length > 0) {
+            replaceSegments(newSegments)
+            setPlayheadPosition(0)
+            setIsPlaying(false)
+          }
         }}
       >
         Generate Cut

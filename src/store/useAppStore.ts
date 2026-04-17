@@ -105,7 +105,8 @@ export const useAppStore = create<AppState>((set) => ({
   updateSegment: (id, patch) =>
     set((s) => ({ segments: s.segments.map((seg) => seg.id === id ? { ...seg, ...patch } : seg) })),
   addSegments: (newSegs) => set((s) => ({ segments: [...s.segments, ...newSegs] })),
-  replaceSegments: (newSegs) => set({ segments: newSegs }),
+  replaceSegments: (newSegs) =>
+    set((s) => ({ segments: [...s.segments.filter((seg) => seg.trackIndex !== 0), ...newSegs] })),
 
   updateBpmConfig: (patch) =>
     set((s) => ({ bpmConfig: { ...s.bpmConfig, ...patch } })),
