@@ -1,5 +1,5 @@
 import type { Config } from 'tailwindcss'
-import tailwindAnimate from 'tailwind-animate'
+import tailwindAnimate from 'tailwindcss-animate'
 
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],

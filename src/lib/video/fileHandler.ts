@@ -6,7 +6,8 @@ import { generateThumbnail } from './thumbnail'
 export async function openVideoFiles(): Promise<File[]> {
   // File System Access API (Chrome 86+)
   if ('showOpenFilePicker' in window) {
-    const handles = await (window as Window & typeof globalThis).showOpenFilePicker({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handles = await (window as any).showOpenFilePicker({
       multiple: true,
       types: [
         { description: 'Video files', accept: { 'video/*': ['.mp4', '.mov', '.avi', '.webm', '.mkv'] } },
