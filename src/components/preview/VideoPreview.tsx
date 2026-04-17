@@ -11,6 +11,7 @@ export default function VideoPreview() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const objectUrlRef = useRef<string | null>(null)
   const rafRef = useRef<number>(0)
+  const stallCountRef = useRef(0)
   const activeSegRef = useRef<Segment | null>(null)
   const segmentsRef = useRef(segments)
   const clipsRef = useRef(clips)
@@ -90,11 +91,18 @@ export default function VideoPreview() {
       if (!seg || !videoRef.current) return
 
       const rawTime = videoRef.current.currentTime
-      // Skip until seek settles after a segment switch to avoid backwards timecode jump
+      // Skip until seek settles; bail out if stalled for >60 frames
       if (rawTime < seg.inPoint) {
+        stallCountRef.current += 1
+        if (stallCountRef.current > 60) {
+          stallCountRef.current = 0
+          setIsPlaying(false)
+          return
+        }
         rafRef.current = requestAnimationFrame(tick)
         return
       }
+      stallCountRef.current = 0
       setPlayheadPosition(seg.startOnTimeline + (rawTime - seg.inPoint))
 
       if (rawTime >= seg.outPoint - 0.05) {
