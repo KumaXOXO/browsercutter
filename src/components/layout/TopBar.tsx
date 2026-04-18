@@ -27,6 +27,11 @@ export default function TopBar() {
         />
       </div>
 
+      {/* Center: version */}
+      <span className="text-xs font-mono" style={{ color: 'var(--muted-subtle)' }}>
+        v{__APP_VERSION__}
+      </span>
+
       {/* Right: actions */}
       <div className="flex items-center gap-1.5">
         <IconBtn title="Undo"><Undo2 size={14} /></IconBtn>
