@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { Trash2 } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import { PanelLabel } from './TextPanel'
-import type { Clip, Segment, TextOverlay } from '../../types'
+import type { AdjustmentLayer, Clip, Effect, EffectType, Segment, TextOverlay } from '../../types'
 
 const CLIP_COLORS: Record<string, { bg: string; color: string }> = {
   video: { bg: 'rgba(124,58,237,0.15)', color: '#A78BFA' },
@@ -12,7 +12,7 @@ const CLIP_COLORS: Record<string, { bg: string; color: string }> = {
 }
 
 export default function InspectorPanel() {
-  const { selectedElement, segments, clips, textOverlays, updateSegment, updateTextOverlay, removeTextOverlay, setSelectedElement } = useAppStore()
+  const { selectedElement, segments, clips, textOverlays, adjustmentLayers, updateSegment, updateTextOverlay, removeTextOverlay, updateAdjustmentLayer, removeAdjustmentLayer, setSelectedElement } = useAppStore()
 
   if (!selectedElement) {
     return (
@@ -30,6 +30,18 @@ export default function InspectorPanel() {
         overlay={overlay}
         onUpdate={(patch) => updateTextOverlay(overlay.id, patch)}
         onDelete={() => { removeTextOverlay(overlay.id); setSelectedElement(null) }}
+      />
+    )
+  }
+
+  if (selectedElement.type === 'adjustment') {
+    const layer = adjustmentLayers.find((l) => l.id === selectedElement.id)
+    if (!layer) return null
+    return (
+      <AdjustmentInspector
+        layer={layer}
+        onUpdate={(patch) => updateAdjustmentLayer(layer.id, patch)}
+        onDelete={() => { removeAdjustmentLayer(layer.id); setSelectedElement(null) }}
       />
     )
   }
@@ -100,9 +112,101 @@ function SegmentInspector({ segment, clip, onUpdate }: { segment: Segment; clip:
 
       <div>
         <PanelLabel>Applied Effects</PanelLabel>
-        <p className="text-xs mt-2" style={{ color: 'var(--muted-subtle)' }}>No effects applied.</p>
-        <button className="text-xs mt-2 cursor-pointer transition-colors" style={{ color: '#E11D48', background: 'transparent', border: 'none' }}>+ Add Effect</button>
+        {(segment.effects ?? []).length === 0 ? (
+          <p className="text-xs mt-2" style={{ color: 'var(--muted-subtle)' }}>No effects — apply from the Effects tab.</p>
+        ) : (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {segment.effects!.map((e) => (
+              <span key={e.type} className="text-xs rounded px-2 py-0.5 font-medium" style={{ background: 'rgba(225,29,72,0.12)', color: '#F43F5E' }}>
+                {e.type} {e.value}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+const EFFECT_DEFS: { type: EffectType; label: string; min: number; max: number; defaultVal: number }[] = [
+  { type: 'brightness',  label: 'Brightness',    min: 0, max: 200, defaultVal: 100 },
+  { type: 'contrast',    label: 'Contrast',      min: 0, max: 200, defaultVal: 100 },
+  { type: 'saturation',  label: 'Saturation',    min: 0, max: 200, defaultVal: 100 },
+  { type: 'grayscale',   label: 'Black & White', min: 0, max: 100, defaultVal: 0 },
+  { type: 'blur',        label: 'Blur',          min: 0, max: 100, defaultVal: 0 },
+  { type: 'vignette',    label: 'Vignette',      min: 0, max: 100, defaultVal: 60 },
+  { type: 'sharpen',     label: 'Sharpen',       min: 0, max: 100, defaultVal: 0 },
+]
+
+function AdjustmentInspector({ layer, onUpdate, onDelete }: { layer: AdjustmentLayer; onUpdate: (patch: Partial<AdjustmentLayer>) => void; onDelete: () => void }) {
+  const effects: Effect[] = layer.effects ?? []
+
+  function toggle(type: EffectType) {
+    const def = EFFECT_DEFS.find((d) => d.type === type)
+    const exists = effects.find((e) => e.type === type)
+    onUpdate({ effects: exists ? effects.filter((e) => e.type !== type) : [...effects, { type, value: def?.defaultVal ?? 100 }] })
+  }
+
+  function setValue(type: EffectType, value: number) {
+    onUpdate({ effects: effects.map((e) => e.type === type ? { ...e, value } : e) })
+  }
+
+  return (
+    <div className="flex flex-col gap-4 p-3.5 overflow-y-auto h-full">
+      <div className="flex items-center justify-between">
+        <PanelLabel>Adjustment Layer</PanelLabel>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold rounded px-2 py-0.5" style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444' }}>FX</span>
+          <button
+            onClick={onDelete}
+            className="cursor-pointer transition-opacity opacity-50 hover:opacity-100"
+            style={{ background: 'transparent', border: 'none', color: '#E11D48', padding: 2 }}
+            title="Delete layer"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Start">
+          <InpField value={formatTime(layer.startOnTimeline)} onChange={(v) => onUpdate({ startOnTimeline: parseTime(v) })} />
+        </Field>
+        <Field label="Duration">
+          <InpField value={formatTime(layer.duration)} onChange={(v) => onUpdate({ duration: parseTime(v) })} />
+        </Field>
+      </div>
+
+      <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+
+      <PanelLabel>Effects</PanelLabel>
+      {EFFECT_DEFS.map((def) => {
+        const active = effects.find((e) => e.type === def.type)
+        return (
+          <div key={def.type} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <button
+              onClick={() => toggle(def.type)}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 0',
+                color: active ? '#F43F5E' : 'var(--muted2)', textAlign: 'left',
+              }}
+            >
+              <span className="text-xs">{def.label}</span>
+              <span className="text-xs" style={{ color: active ? '#F43F5E' : 'var(--muted-subtle)' }}>{active ? 'ON' : 'OFF'}</span>
+            </button>
+            {active && (
+              <input
+                type="range" min={def.min} max={def.max}
+                defaultValue={active.value}
+                className="w-full"
+                style={{ accentColor: '#E11D48' }}
+                onPointerUp={(e) => setValue(def.type, Number((e.target as HTMLInputElement).value))}
+              />
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

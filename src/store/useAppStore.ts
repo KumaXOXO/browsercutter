@@ -61,6 +61,13 @@ interface AppState {
   updateTextOverlay: (id: string, patch: Partial<TextOverlay>) => void
   removeTextOverlay: (id: string) => void
 
+  addAdjustmentLayer: (layer: AdjustmentLayer) => void
+  updateAdjustmentLayer: (id: string, patch: Partial<AdjustmentLayer>) => void
+  removeAdjustmentLayer: (id: string) => void
+
+  addTransition: (transition: Transition) => void
+  removeTransition: (id: string) => void
+
   updateBpmConfig: (patch: Partial<BpmConfig>) => void
   setPlayheadPosition: (pos: number) => void
   setIsPlaying: (playing: boolean) => void
@@ -144,6 +151,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateTextOverlay: (id, patch) =>
     set((s) => ({ ...push(s), textOverlays: s.textOverlays.map((o) => o.id === id ? { ...o, ...patch } : o) })),
   removeTextOverlay: (id) => set((s) => ({ ...push(s), textOverlays: s.textOverlays.filter((o) => o.id !== id) })),
+
+  addAdjustmentLayer: (layer) => set((s) => ({ adjustmentLayers: [...s.adjustmentLayers, layer] })),
+  updateAdjustmentLayer: (id, patch) =>
+    set((s) => ({ adjustmentLayers: s.adjustmentLayers.map((l) => l.id === id ? { ...l, ...patch } : l) })),
+  removeAdjustmentLayer: (id) => set((s) => ({ adjustmentLayers: s.adjustmentLayers.filter((l) => l.id !== id) })),
+
+  addTransition: (transition) => set((s) => ({ transitions: [...s.transitions, transition] })),
+  removeTransition: (id) => set((s) => ({ transitions: s.transitions.filter((t) => t.id !== id) })),
 
   updateBpmConfig: (patch) =>
     set((s) => ({ bpmConfig: { ...s.bpmConfig, ...patch } })),

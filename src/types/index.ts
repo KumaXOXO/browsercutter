@@ -35,6 +35,7 @@ export interface Segment {
   outPoint: number         // seconds from clip start
   volume?: number          // 0–1, default 1.0
   speed?: number           // 0.25–4.0, default 1.0
+  effects?: Effect[]
 }
 
 export interface Effect {

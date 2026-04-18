@@ -4,6 +4,7 @@ import { Film } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import { formatTime } from '../../lib/utils'
 import TextOverlayRenderer from './TextOverlayRenderer'
+import { buildCSSFilter, hasVignette, vignetteOpacity } from '../../lib/video/effectsFilter'
 import type { Segment } from '../../types'
 
 export default function VideoPreview() {
@@ -286,8 +287,19 @@ export default function VideoPreview() {
       >
         <video
           ref={videoRef}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
+          style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', background: '#000',
+            filter: buildCSSFilter(activeSeg?.effects ?? []) || undefined,
+          }}
         />
+        {activeSeg?.effects && hasVignette(activeSeg.effects) && (
+          <div
+            style={{
+              position: 'absolute', inset: 0, pointerEvents: 'none',
+              background: `radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,${vignetteOpacity(activeSeg.effects)}) 100%)`,
+            }}
+          />
+        )}
         <TextOverlayRenderer />
         {!hasSegments && (
           <div

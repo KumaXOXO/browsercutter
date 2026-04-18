@@ -4,6 +4,7 @@ import { Film, Volume2 } from 'lucide-react'
 import TimeRuler from './TimeRuler'
 import Track from './Track'
 import TextTrack from './TextTrack'
+import AdjustmentTrack from './AdjustmentTrack'
 import { useAppStore } from '../../store/useAppStore'
 import { PX_PER_SEC } from './ClipBlock'
 
@@ -63,6 +64,7 @@ export default function Timeline() {
 
           <Track trackIndex={0} label="V1" icon={<Film size={9} />} height={38} zoom={zoom} trackLabelWidth={TRACK_LABEL_WIDTH} />
           <TextTrack zoom={zoom} trackLabelWidth={TRACK_LABEL_WIDTH} />
+          <AdjustmentTrack zoom={zoom} trackLabelWidth={TRACK_LABEL_WIDTH} />
 
           <Track trackIndex={2} label="Audio" icon={<Volume2 size={9} />} height={28} zoom={zoom} trackLabelWidth={TRACK_LABEL_WIDTH} />
         </div>
