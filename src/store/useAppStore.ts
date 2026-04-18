@@ -46,6 +46,10 @@ interface AppState {
   addSegments: (segments: Segment[]) => void
   replaceSegments: (segments: Segment[]) => void
 
+  addTextOverlay: (overlay: TextOverlay) => void
+  updateTextOverlay: (id: string, patch: Partial<TextOverlay>) => void
+  removeTextOverlay: (id: string) => void
+
   updateBpmConfig: (patch: Partial<BpmConfig>) => void
   setPlayheadPosition: (pos: number) => void
   setIsPlaying: (playing: boolean) => void
@@ -107,6 +111,11 @@ export const useAppStore = create<AppState>((set) => ({
   addSegments: (newSegs) => set((s) => ({ segments: [...s.segments, ...newSegs] })),
   replaceSegments: (newSegs) =>
     set((s) => ({ segments: [...s.segments.filter((seg) => seg.trackIndex !== 0), ...newSegs] })),
+
+  addTextOverlay: (overlay) => set((s) => ({ textOverlays: [...s.textOverlays, overlay] })),
+  updateTextOverlay: (id, patch) =>
+    set((s) => ({ textOverlays: s.textOverlays.map((o) => o.id === id ? { ...o, ...patch } : o) })),
+  removeTextOverlay: (id) => set((s) => ({ textOverlays: s.textOverlays.filter((o) => o.id !== id) })),
 
   updateBpmConfig: (patch) =>
     set((s) => ({ bpmConfig: { ...s.bpmConfig, ...patch } })),
