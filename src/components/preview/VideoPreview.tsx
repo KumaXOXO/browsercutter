@@ -16,6 +16,11 @@ export default function VideoPreview() {
   const segmentsRef = useRef(segments)
   const clipsRef = useRef(clips)
 
+  // Audio element for the audio track (trackIndex 2)
+  const audioRef = useRef<HTMLAudioElement>(new Audio())
+  const audioUrlRef = useRef<string | null>(null)
+  const activeAudioSegRef = useRef<Segment | null>(null)
+
   // Keep refs in sync for RAF tick (avoids stale closures)
   segmentsRef.current = segments
   clipsRef.current = clips
@@ -33,7 +38,19 @@ export default function VideoPreview() {
   // Keep activeSegRef in sync
   activeSegRef.current = activeSeg
 
-  // Load object URL when clip changes (only when not playing)
+  const activeAudioSeg = useMemo(() =>
+    segments.find(
+      (s) => s.trackIndex === 2 &&
+        playheadPosition >= s.startOnTimeline &&
+        playheadPosition < s.startOnTimeline + (s.outPoint - s.inPoint),
+    ) ?? null,
+    [segments, playheadPosition],
+  )
+  const activeAudioClip = activeAudioSeg ? clips.find((c) => c.id === activeAudioSeg.clipId) ?? null : null
+
+  activeAudioSegRef.current = activeAudioSeg
+
+  // Load video object URL when clip changes (only when not playing)
   useEffect(() => {
     if (isPlaying) return
     const video = videoRef.current
@@ -61,12 +78,47 @@ export default function VideoPreview() {
     }
   }, [activeClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Seek when playhead moves while paused
+  // Load audio object URL when audio clip changes (only when not playing)
+  useEffect(() => {
+    if (isPlaying) return
+    const audio = audioRef.current
+
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current)
+      audioUrlRef.current = null
+    }
+
+    if (!activeAudioClip?.file) {
+      audio.src = ''
+      return
+    }
+
+    const url = URL.createObjectURL(activeAudioClip.file)
+    audioUrlRef.current = url
+    audio.src = url
+
+    return () => {
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current)
+        audioUrlRef.current = null
+      }
+    }
+  }, [activeAudioClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Seek video when playhead moves while paused
   useEffect(() => {
     const video = videoRef.current
     const seg = activeSegRef.current
     if (isPlaying || !video || !seg) return
     video.currentTime = seg.inPoint + (playheadPosition - seg.startOnTimeline)
+  }, [playheadPosition]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Seek audio when playhead moves while paused
+  useEffect(() => {
+    const audio = audioRef.current
+    const seg = activeAudioSegRef.current
+    if (isPlaying || !seg) return
+    audio.currentTime = seg.inPoint + (playheadPosition - seg.startOnTimeline)
   }, [playheadPosition]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // RAF playback loop
@@ -76,6 +128,7 @@ export default function VideoPreview() {
     if (!isPlaying) {
       cancelAnimationFrame(rafRef.current)
       video?.pause()
+      audioRef.current.pause()
       return
     }
 
@@ -85,6 +138,11 @@ export default function VideoPreview() {
     }
 
     video.play().catch(() => setIsPlaying(false))
+
+    // Start audio if an audio segment is active
+    if (activeAudioSegRef.current && audioRef.current.src) {
+      audioRef.current.play().catch(() => {})
+    }
 
     const tick = () => {
       const seg = activeSegRef.current
@@ -103,7 +161,21 @@ export default function VideoPreview() {
         return
       }
       stallCountRef.current = 0
-      setPlayheadPosition(seg.startOnTimeline + (rawTime - seg.inPoint))
+
+      const currentPlayhead = seg.startOnTimeline + (rawTime - seg.inPoint)
+      setPlayheadPosition(currentPlayhead)
+
+      // Sync audio: find any audio segment covering the current playhead
+      const audioSeg = segmentsRef.current.find(
+        (s) => s.trackIndex === 2 &&
+          currentPlayhead >= s.startOnTimeline &&
+          currentPlayhead < s.startOnTimeline + (s.outPoint - s.inPoint),
+      )
+      if (audioSeg && audioRef.current.paused && audioRef.current.src) {
+        audioRef.current.play().catch(() => {})
+      } else if (!audioSeg && !audioRef.current.paused) {
+        audioRef.current.pause()
+      }
 
       if (rawTime >= seg.outPoint - 0.05) {
         const nextSeg = segmentsRef.current
@@ -143,6 +215,7 @@ export default function VideoPreview() {
     return () => {
       cancelAnimationFrame(rafRef.current)
       videoRef.current?.pause()
+      audioRef.current.pause()
     }
   }, [isPlaying]) // eslint-disable-line react-hooks/exhaustive-deps
 
