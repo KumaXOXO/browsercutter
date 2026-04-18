@@ -33,6 +33,8 @@ export interface Segment {
   startOnTimeline: number  // seconds from timeline start
   inPoint: number          // seconds from clip start
   outPoint: number         // seconds from clip start
+  volume?: number          // 0–1, default 1.0
+  speed?: number           // 0.25–4.0, default 1.0
 }
 
 export interface Effect {
