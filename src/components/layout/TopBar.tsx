@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Undo2, Redo2, Save } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
+import ExportModal from '../export/ExportModal'
 
 const SAVE_KEY = 'browsercutter_project'
 
@@ -14,6 +15,7 @@ function saveProject() {
 export default function TopBar() {
   const { projectName, setProjectName, undo, redo, canUndo, canRedo } = useAppStore()
   const [saved, setSaved] = useState(false)
+  const [showExport, setShowExport] = useState(false)
 
   function handleSave() {
     saveProject()
@@ -69,10 +71,11 @@ export default function TopBar() {
           <Save size={13} />
           {saved ? 'Saved!' : 'Save'}
         </GhostBtn>
-        <PrimaryBtn onClick={() => alert('Export is coming in Phase 7.\nYou can save your project with Ctrl+S and reload it later.')}>
+        <PrimaryBtn onClick={() => setShowExport(true)}>
           Export Video
         </PrimaryBtn>
       </div>
+      {showExport && <ExportModal onClose={() => setShowExport(false)} />}
     </div>
   )
 }
