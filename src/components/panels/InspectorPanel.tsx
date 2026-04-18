@@ -9,7 +9,7 @@ const CLIP_COLORS: Record<string, { bg: string; color: string }> = {
 }
 
 export default function InspectorPanel() {
-  const { selectedElement, segments, clips, updateSegment } = useAppStore()
+  const { selectedElement, segments, clips, textOverlays, updateSegment, updateTextOverlay } = useAppStore()
 
   if (!selectedElement) {
     return (
@@ -19,6 +19,12 @@ export default function InspectorPanel() {
     )
   }
 
+  if (selectedElement.type === 'text') {
+    const overlay = textOverlays.find((o) => o.id === selectedElement.id)
+    if (!overlay) return null
+    return <TextOverlayInspector overlay={overlay} onUpdate={(patch) => updateTextOverlay(overlay.id, patch)} />
+  }
+
   const segment = segments.find((s) => s.id === selectedElement.id)
   const clip = segment ? clips.find((c) => c.id === segment.clipId) : null
 
@@ -26,6 +32,8 @@ export default function InspectorPanel() {
 
   const style = CLIP_COLORS[clip.type] ?? CLIP_COLORS.video
   const duration = segment.outPoint - segment.inPoint
+  const volume = segment.volume ?? 1
+  const speed = segment.speed ?? 1
 
   return (
     <div className="flex flex-col gap-4 p-3.5 overflow-y-auto h-full">
@@ -48,11 +56,23 @@ export default function InspectorPanel() {
 
       <div style={{ height: 1, background: 'var(--border-subtle)' }} />
 
-      <Field label="Volume">
-        <input type="range" min={0} max={100} defaultValue={100} className="w-full" style={{ accentColor: '#E11D48' }} />
+      <Field label={`Volume — ${Math.round(volume * 100)}%`}>
+        <input
+          type="range" min={0} max={100}
+          value={Math.round(volume * 100)}
+          className="w-full"
+          style={{ accentColor: '#E11D48' }}
+          onChange={(e) => updateSegment(segment.id, { volume: Number(e.target.value) / 100 })}
+        />
       </Field>
-      <Field label="Speed">
-        <input type="range" min={25} max={400} defaultValue={100} className="w-full" style={{ accentColor: '#E11D48' }} />
+      <Field label={`Speed — ${speed.toFixed(2)}x`}>
+        <input
+          type="range" min={25} max={400}
+          value={Math.round(speed * 100)}
+          className="w-full"
+          style={{ accentColor: '#E11D48' }}
+          onChange={(e) => updateSegment(segment.id, { speed: Number(e.target.value) / 100 })}
+        />
       </Field>
 
       <div style={{ height: 1, background: 'var(--border-subtle)' }} />
@@ -61,6 +81,74 @@ export default function InspectorPanel() {
         <PanelLabel>Applied Effects</PanelLabel>
         <p className="text-xs mt-2" style={{ color: 'var(--muted-subtle)' }}>No effects applied.</p>
         <button className="text-xs mt-2 cursor-pointer transition-colors" style={{ color: '#E11D48', background: 'transparent', border: 'none' }}>+ Add Effect</button>
+      </div>
+    </div>
+  )
+}
+
+import type { TextOverlay } from '../../types'
+
+function TextOverlayInspector({ overlay, onUpdate }: { overlay: TextOverlay; onUpdate: (patch: Partial<TextOverlay>) => void }) {
+  return (
+    <div className="flex flex-col gap-4 p-3.5 overflow-y-auto h-full">
+      <div className="flex items-center justify-between">
+        <PanelLabel>Inspector</PanelLabel>
+        <span className="text-xs font-semibold rounded px-2 py-0.5" style={{ background: 'rgba(234,179,8,0.15)', color: '#EAB308' }}>Text</span>
+      </div>
+
+      <Field label="Text">
+        <textarea
+          className="inp resize-none"
+          rows={3}
+          value={overlay.text}
+          onChange={(e) => onUpdate({ text: e.target.value })}
+        />
+      </Field>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Start">
+          <InpField value={formatTime(overlay.startOnTimeline)} onChange={(v) => onUpdate({ startOnTimeline: parseTime(v) })} />
+        </Field>
+        <Field label="Duration">
+          <InpField value={formatTime(overlay.duration)} onChange={(v) => onUpdate({ duration: parseTime(v) })} />
+        </Field>
+      </div>
+
+      <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Font">
+          <InpField value={overlay.font} onChange={(v) => onUpdate({ font: v })} />
+        </Field>
+        <Field label={`Size — ${overlay.size}px`}>
+          <input
+            type="range" min={10} max={120}
+            value={overlay.size}
+            className="w-full mt-1"
+            style={{ accentColor: '#EAB308' }}
+            onChange={(e) => onUpdate({ size: Number(e.target.value) })}
+          />
+        </Field>
+      </div>
+
+      <Field label="Color">
+        <input
+          type="color"
+          value={overlay.color}
+          className="h-8 w-full rounded cursor-pointer"
+          onChange={(e) => onUpdate({ color: e.target.value })}
+        />
+      </Field>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Field label={`X — ${Math.round(overlay.x * 100)}%`}>
+          <input type="range" min={0} max={100} value={Math.round(overlay.x * 100)} className="w-full" style={{ accentColor: '#EAB308' }}
+            onChange={(e) => onUpdate({ x: Number(e.target.value) / 100 })} />
+        </Field>
+        <Field label={`Y — ${Math.round(overlay.y * 100)}%`}>
+          <input type="range" min={0} max={100} value={Math.round(overlay.y * 100)} className="w-full" style={{ accentColor: '#EAB308' }}
+            onChange={(e) => onUpdate({ y: Number(e.target.value) / 100 })} />
+        </Field>
       </div>
     </div>
   )
