@@ -1,13 +1,17 @@
 // src/components/preview/TextOverlayRenderer.tsx
+import { useMemo } from 'react'
 import { useAppStore } from '../../store/useAppStore'
 
 export default function TextOverlayRenderer() {
   const textOverlays = useAppStore((s) => s.textOverlays)
   const playheadPosition = useAppStore((s) => s.playheadPosition)
 
-  const active = textOverlays.filter(
-    (o) => playheadPosition >= o.startOnTimeline &&
-           playheadPosition < o.startOnTimeline + o.duration
+  const active = useMemo(
+    () => textOverlays.filter(
+      (o) => playheadPosition >= o.startOnTimeline &&
+             playheadPosition < o.startOnTimeline + o.duration
+    ),
+    [textOverlays, playheadPosition],
   )
 
   if (active.length === 0) return null
@@ -23,7 +27,7 @@ export default function TextOverlayRenderer() {
             top: `${overlay.y * 100}%`,
             transform: 'translate(-50%, -50%)',
             color: overlay.color,
-            fontSize: overlay.size,
+            fontSize: `${overlay.size}px`,
             fontFamily: overlay.font,
             fontWeight: 700,
             pointerEvents: 'none',

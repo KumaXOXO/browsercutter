@@ -34,4 +34,34 @@ describe('parseSrt', () => {
     expect(parseSrt('')).toHaveLength(0)
     expect(parseSrt('not an srt')).toHaveLength(0)
   })
+
+  it('parses a single-block SRT', () => {
+    const single = `1\n00:00:00,500 --> 00:00:02,000\nOnly line`
+    const result = parseSrt(single)
+    expect(result).toHaveLength(1)
+    expect(result[0].text).toBe('Only line')
+    expect(result[0].startOnTimeline).toBeCloseTo(0.5)
+    expect(result[0].duration).toBeCloseTo(1.5)
+  })
+
+  it('clamps zero-duration subtitles to 0.1s', () => {
+    const zeroDur = `1\n00:00:01,000 --> 00:00:01,000\nInstant`
+    const [block] = parseSrt(zeroDur)
+    expect(block.duration).toBe(0.1)
+  })
+
+  it('skips blocks with malformed timestamps', () => {
+    const bad = `1\nnot-a-timestamp\nText`
+    expect(parseSrt(bad)).toHaveLength(0)
+  })
+
+  it('sets default overlay properties', () => {
+    const single = `1\n00:00:01,000 --> 00:00:02,000\nTest`
+    const [block] = parseSrt(single)
+    expect(block.font).toBe('Inter')
+    expect(block.size).toBe(32)
+    expect(block.color).toBe('#FFFFFF')
+    expect(block.x).toBeCloseTo(0.5)
+    expect(block.y).toBeCloseTo(0.85)
+  })
 })

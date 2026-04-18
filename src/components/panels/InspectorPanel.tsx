@@ -1,6 +1,9 @@
 // src/components/panels/InspectorPanel.tsx
+import { useState, useEffect } from 'react'
+import { Trash2 } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import { PanelLabel } from './TextPanel'
+import type { Clip, Segment, TextOverlay } from '../../types'
 
 const CLIP_COLORS: Record<string, { bg: string; color: string }> = {
   video: { bg: 'rgba(124,58,237,0.15)', color: '#A78BFA' },
@@ -9,7 +12,7 @@ const CLIP_COLORS: Record<string, { bg: string; color: string }> = {
 }
 
 export default function InspectorPanel() {
-  const { selectedElement, segments, clips, textOverlays, updateSegment, updateTextOverlay } = useAppStore()
+  const { selectedElement, segments, clips, textOverlays, updateSegment, updateTextOverlay, removeTextOverlay, setSelectedElement } = useAppStore()
 
   if (!selectedElement) {
     return (
@@ -22,18 +25,34 @@ export default function InspectorPanel() {
   if (selectedElement.type === 'text') {
     const overlay = textOverlays.find((o) => o.id === selectedElement.id)
     if (!overlay) return null
-    return <TextOverlayInspector overlay={overlay} onUpdate={(patch) => updateTextOverlay(overlay.id, patch)} />
+    return (
+      <TextOverlayInspector
+        overlay={overlay}
+        onUpdate={(patch) => updateTextOverlay(overlay.id, patch)}
+        onDelete={() => { removeTextOverlay(overlay.id); setSelectedElement(null) }}
+      />
+    )
   }
 
   const segment = segments.find((s) => s.id === selectedElement.id)
-  const clip = segment ? clips.find((c) => c.id === segment.clipId) : null
+  const clip = segment ? clips.find((c) => c.id === segment.clipId) ?? null : null
 
   if (!segment || !clip) return null
 
+  return <SegmentInspector segment={segment} clip={clip} onUpdate={(patch) => updateSegment(segment.id, patch)} />
+}
+
+function SegmentInspector({ segment, clip, onUpdate }: { segment: Segment; clip: Clip; onUpdate: (patch: Partial<Segment>) => void }) {
   const style = CLIP_COLORS[clip.type] ?? CLIP_COLORS.video
   const duration = segment.outPoint - segment.inPoint
-  const volume = segment.volume ?? 1
-  const speed = segment.speed ?? 1
+
+  const [localVolume, setLocalVolume] = useState(Math.round((segment.volume ?? 1) * 100))
+  const [localSpeed, setLocalSpeed] = useState(Math.round((segment.speed ?? 1) * 100))
+
+  useEffect(() => {
+    setLocalVolume(Math.round((segment.volume ?? 1) * 100))
+    setLocalSpeed(Math.round((segment.speed ?? 1) * 100))
+  }, [segment.id])
 
   return (
     <div className="flex flex-col gap-4 p-3.5 overflow-y-auto h-full">
@@ -44,10 +63,10 @@ export default function InspectorPanel() {
 
       <div className="grid grid-cols-2 gap-2">
         <Field label="In Point">
-          <InpField value={formatTime(segment.inPoint)} onChange={(v) => updateSegment(segment.id, { inPoint: parseTime(v) })} />
+          <InpField value={formatTime(segment.inPoint)} onChange={(v) => onUpdate({ inPoint: parseTime(v) })} />
         </Field>
         <Field label="Out Point">
-          <InpField value={formatTime(segment.outPoint)} onChange={(v) => updateSegment(segment.id, { outPoint: parseTime(v) })} />
+          <InpField value={formatTime(segment.outPoint)} onChange={(v) => onUpdate({ outPoint: parseTime(v) })} />
         </Field>
       </div>
       <Field label="Duration">
@@ -56,22 +75,24 @@ export default function InspectorPanel() {
 
       <div style={{ height: 1, background: 'var(--border-subtle)' }} />
 
-      <Field label={`Volume — ${Math.round(volume * 100)}%`}>
+      <Field label={`Volume — ${localVolume}%`}>
         <input
           type="range" min={0} max={100}
-          value={Math.round(volume * 100)}
+          value={localVolume}
           className="w-full"
           style={{ accentColor: '#E11D48' }}
-          onChange={(e) => updateSegment(segment.id, { volume: Number(e.target.value) / 100 })}
+          onChange={(e) => setLocalVolume(Number(e.target.value))}
+          onPointerUp={(e) => onUpdate({ volume: Number((e.target as HTMLInputElement).value) / 100 })}
         />
       </Field>
-      <Field label={`Speed — ${speed.toFixed(2)}x`}>
+      <Field label={`Speed — ${(localSpeed / 100).toFixed(2)}x`}>
         <input
           type="range" min={25} max={400}
-          value={Math.round(speed * 100)}
+          value={localSpeed}
           className="w-full"
           style={{ accentColor: '#E11D48' }}
-          onChange={(e) => updateSegment(segment.id, { speed: Number(e.target.value) / 100 })}
+          onChange={(e) => setLocalSpeed(Number(e.target.value))}
+          onPointerUp={(e) => onUpdate({ speed: Number((e.target as HTMLInputElement).value) / 100 })}
         />
       </Field>
 
@@ -86,14 +107,32 @@ export default function InspectorPanel() {
   )
 }
 
-import type { TextOverlay } from '../../types'
+function TextOverlayInspector({ overlay, onUpdate, onDelete }: { overlay: TextOverlay; onUpdate: (patch: Partial<TextOverlay>) => void; onDelete: () => void }) {
+  const [localSize, setLocalSize] = useState(overlay.size)
+  const [localX, setLocalX] = useState(Math.round(overlay.x * 100))
+  const [localY, setLocalY] = useState(Math.round(overlay.y * 100))
 
-function TextOverlayInspector({ overlay, onUpdate }: { overlay: TextOverlay; onUpdate: (patch: Partial<TextOverlay>) => void }) {
+  useEffect(() => {
+    setLocalSize(overlay.size)
+    setLocalX(Math.round(overlay.x * 100))
+    setLocalY(Math.round(overlay.y * 100))
+  }, [overlay.id])
+
   return (
     <div className="flex flex-col gap-4 p-3.5 overflow-y-auto h-full">
       <div className="flex items-center justify-between">
         <PanelLabel>Inspector</PanelLabel>
-        <span className="text-xs font-semibold rounded px-2 py-0.5" style={{ background: 'rgba(234,179,8,0.15)', color: '#EAB308' }}>Text</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold rounded px-2 py-0.5" style={{ background: 'rgba(234,179,8,0.15)', color: '#EAB308' }}>Text</span>
+          <button
+            onClick={onDelete}
+            className="cursor-pointer transition-opacity opacity-50 hover:opacity-100"
+            style={{ background: 'transparent', border: 'none', color: '#E11D48', padding: 2 }}
+            title="Delete overlay"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
       </div>
 
       <Field label="Text">
@@ -120,13 +159,14 @@ function TextOverlayInspector({ overlay, onUpdate }: { overlay: TextOverlay; onU
         <Field label="Font">
           <InpField value={overlay.font} onChange={(v) => onUpdate({ font: v })} />
         </Field>
-        <Field label={`Size — ${overlay.size}px`}>
+        <Field label={`Size — ${localSize}px`}>
           <input
             type="range" min={10} max={120}
-            value={overlay.size}
+            value={localSize}
             className="w-full mt-1"
             style={{ accentColor: '#EAB308' }}
-            onChange={(e) => onUpdate({ size: Number(e.target.value) })}
+            onChange={(e) => setLocalSize(Number(e.target.value))}
+            onPointerUp={(e) => onUpdate({ size: Number((e.target as HTMLInputElement).value) })}
           />
         </Field>
       </div>
@@ -141,13 +181,15 @@ function TextOverlayInspector({ overlay, onUpdate }: { overlay: TextOverlay; onU
       </Field>
 
       <div className="grid grid-cols-2 gap-2">
-        <Field label={`X — ${Math.round(overlay.x * 100)}%`}>
-          <input type="range" min={0} max={100} value={Math.round(overlay.x * 100)} className="w-full" style={{ accentColor: '#EAB308' }}
-            onChange={(e) => onUpdate({ x: Number(e.target.value) / 100 })} />
+        <Field label={`X — ${localX}%`}>
+          <input type="range" min={0} max={100} value={localX} className="w-full" style={{ accentColor: '#EAB308' }}
+            onChange={(e) => setLocalX(Number(e.target.value))}
+            onPointerUp={(e) => onUpdate({ x: Number((e.target as HTMLInputElement).value) / 100 })} />
         </Field>
-        <Field label={`Y — ${Math.round(overlay.y * 100)}%`}>
-          <input type="range" min={0} max={100} value={Math.round(overlay.y * 100)} className="w-full" style={{ accentColor: '#EAB308' }}
-            onChange={(e) => onUpdate({ y: Number(e.target.value) / 100 })} />
+        <Field label={`Y — ${localY}%`}>
+          <input type="range" min={0} max={100} value={localY} className="w-full" style={{ accentColor: '#EAB308' }}
+            onChange={(e) => setLocalY(Number(e.target.value))}
+            onPointerUp={(e) => onUpdate({ y: Number((e.target as HTMLInputElement).value) / 100 })} />
         </Field>
       </div>
     </div>
