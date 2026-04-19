@@ -1,6 +1,6 @@
 // src/lib/video/effectsFilter.test.ts
 import { describe, it, expect } from 'vitest'
-import { buildCSSFilter, hasVignette, vignetteOpacity } from './effectsFilter'
+import { buildCSSFilter, hasVignette, vignetteOpacity, buildFFmpegFilter } from './effectsFilter'
 import type { Effect } from '../../types'
 
 describe('buildCSSFilter', () => {
@@ -66,5 +66,53 @@ describe('vignetteOpacity', () => {
 
   it('returns 0 when no vignette', () => {
     expect(vignetteOpacity([])).toBe(0)
+  })
+})
+
+describe('buildFFmpegFilter', () => {
+  it('returns empty string for empty effects', () => {
+    expect(buildFFmpegFilter([])).toBe('')
+  })
+
+  it('returns empty string for undefined input', () => {
+    expect(buildFFmpegFilter(undefined as unknown as Effect[])).toBe('')
+  })
+
+  it('groups brightness+contrast+saturation into one eq call', () => {
+    const result = buildFFmpegFilter([
+      { type: 'brightness', value: 150 },
+      { type: 'contrast', value: 100 },
+      { type: 'saturation', value: 100 },
+    ])
+    expect(result).toContain('eq=')
+    expect(result).toContain('brightness=')
+    expect(result).toContain('contrast=')
+    expect(result).toContain('saturation=')
+    expect(result.match(/eq=/g)?.length).toBe(1)
+  })
+
+  it('maps blur to gblur', () => {
+    const result = buildFFmpegFilter([{ type: 'blur', value: 50 }])
+    expect(result).toContain('gblur=sigma=')
+  })
+
+  it('maps sharpen to unsharp', () => {
+    const result = buildFFmpegFilter([{ type: 'sharpen', value: 100 }])
+    expect(result).toContain('unsharp=5:5:')
+  })
+
+  it('maps grayscale to hue=s=0 when value > 0', () => {
+    const result = buildFFmpegFilter([{ type: 'grayscale', value: 100 }])
+    expect(result).toBe('hue=s=0')
+  })
+
+  it('omits grayscale filter when value is 0', () => {
+    const result = buildFFmpegFilter([{ type: 'grayscale', value: 0 }])
+    expect(result).toBe('')
+  })
+
+  it('maps vignette to vignette filter', () => {
+    const result = buildFFmpegFilter([{ type: 'vignette', value: 60 }])
+    expect(result).toContain('vignette=angle=')
   })
 })

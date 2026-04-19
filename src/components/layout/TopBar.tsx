@@ -7,8 +7,8 @@ import ExportModal from '../export/ExportModal'
 const SAVE_KEY = 'browsercutter_project'
 
 function saveProject() {
-  const { projectName, projectSettings, segments, textOverlays, bpmConfig } = useAppStore.getState()
-  const data = { projectName, projectSettings, segments, textOverlays, bpmConfig, savedAt: Date.now() }
+  const { projectName, projectSettings, segments, textOverlays, bpmConfig, transitions, adjustmentLayers } = useAppStore.getState()
+  const data = { projectName, projectSettings, segments, textOverlays, bpmConfig, transitions, adjustmentLayers, savedAt: Date.now() }
   localStorage.setItem(SAVE_KEY, JSON.stringify(data))
 }
 

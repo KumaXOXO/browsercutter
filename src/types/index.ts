@@ -83,6 +83,7 @@ export interface ProjectSettings {
   resolution: Resolution
   fps: FrameRate
   format: ExportFormat
+  quality: 'draft' | 'good' | 'best'
   autoDetectBpm: boolean
   snapToBeat: boolean
   hardwareAcceleration: boolean

@@ -1,18 +1,33 @@
 // src/components/export/ExportModal.tsx
 import { X, Download, AlertCircle, CheckCircle } from 'lucide-react'
 import { useExport } from '../../lib/export/useExport'
+import { useAppStore } from '../../store/useAppStore'
+import type { ExportFormat } from '../../types'
 
 interface Props {
   onClose: () => void
 }
 
+type Quality = 'draft' | 'good' | 'best'
+
+const QUALITY_LABELS: Record<Quality, { label: string; hint: string }> = {
+  draft: { label: 'Draft',  hint: 'Fast encode, larger file' },
+  good:  { label: 'Good',   hint: 'Balanced quality and size' },
+  best:  { label: 'Best',   hint: 'Slow encode, smallest file' },
+}
+
 export default function ExportModal({ onClose }: Props) {
   const { status, progress, label, errorMsg, startExport, cancel } = useExport()
+  const { projectSettings, updateProjectSettings } = useAppStore()
+  const { format, quality } = projectSettings
 
   function handleClose() {
     if (status === 'running') cancel()
     onClose()
   }
+
+  function setFormat(f: ExportFormat) { updateProjectSettings({ format: f }) }
+  function setQuality(q: Quality) { updateProjectSettings({ quality: q }) }
 
   return (
     <div
@@ -23,7 +38,7 @@ export default function ExportModal({ onClose }: Props) {
       <div
         className="flex flex-col rounded-xl overflow-hidden"
         style={{
-          width: 420,
+          width: 440,
           background: 'var(--surface)',
           border: '1px solid var(--border-subtle)',
           boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
@@ -47,15 +62,59 @@ export default function ExportModal({ onClose }: Props) {
         <div className="flex flex-col gap-4 p-5">
           {status === 'idle' && (
             <>
-              <div className="rounded-lg p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)' }}>
-                <p className="text-xs font-semibold mb-1" style={{ color: 'var(--muted-subtle)' }}>What happens on export</p>
-                <ul className="text-xs flex flex-col gap-1" style={{ color: 'var(--muted2)', listStyle: 'none', padding: 0 }}>
-                  <li>• Your V1 clips are concatenated in timeline order</li>
-                  <li>• Encoded as H.264 MP4 via FFmpeg WebAssembly</li>
-                  <li>• Downloaded directly to your computer</li>
-                  <li>• No data leaves your browser</li>
-                </ul>
+              {/* Format selector */}
+              <div>
+                <p className="text-xs font-semibold mb-2" style={{ color: 'var(--muted-subtle)' }}>Format</p>
+                <div className="flex gap-2">
+                  {(['mp4', 'webm'] as ExportFormat[]).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setFormat(f)}
+                      className="flex-1 rounded-lg text-xs font-semibold cursor-pointer transition-all duration-150"
+                      style={{
+                        padding: '8px',
+                        background: format === f ? 'rgba(225,29,72,0.12)' : 'rgba(255,255,255,0.03)',
+                        border: `1px solid ${format === f ? 'rgba(225,29,72,0.4)' : 'var(--border-subtle)'}`,
+                        color: format === f ? '#F43F5E' : 'var(--muted2)',
+                      }}
+                    >
+                      {f.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                {format === 'webm' && (
+                  <p className="text-xs mt-2" style={{ color: '#EAB308' }}>
+                    WebM (VP9) encodes significantly slower than H.264 MP4 in WASM.
+                  </p>
+                )}
               </div>
+
+              {/* Quality selector */}
+              <div>
+                <p className="text-xs font-semibold mb-2" style={{ color: 'var(--muted-subtle)' }}>Quality</p>
+                <div className="flex gap-2">
+                  {(['draft', 'good', 'best'] as Quality[]).map((q) => {
+                    const { label: qLabel, hint } = QUALITY_LABELS[q]
+                    return (
+                      <button
+                        key={q}
+                        onClick={() => setQuality(q)}
+                        className="flex-1 rounded-lg text-xs cursor-pointer transition-all duration-150 text-left"
+                        style={{
+                          padding: '8px 10px',
+                          background: quality === q ? 'rgba(225,29,72,0.12)' : 'rgba(255,255,255,0.03)',
+                          border: `1px solid ${quality === q ? 'rgba(225,29,72,0.4)' : 'var(--border-subtle)'}`,
+                          color: quality === q ? '#F43F5E' : 'var(--muted2)',
+                        }}
+                      >
+                        <div className="font-semibold">{qLabel}</div>
+                        <div className="mt-0.5" style={{ color: 'var(--muted-subtle)', fontSize: 10 }}>{hint}</div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
               <div className="rounded-lg p-3" style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)' }}>
                 <p className="text-xs" style={{ color: '#EAB308' }}>
                   First export loads ~31 MB of FFmpeg WASM from CDN. Subsequent exports are instant.
@@ -136,7 +195,7 @@ export default function ExportModal({ onClose }: Props) {
 
           {status === 'done' && (
             <button
-              onClick={() => { onClose() }}
+              onClick={onClose}
               className="text-sm font-semibold text-white rounded-lg cursor-pointer transition-all duration-200"
               style={{ padding: '8px 20px', background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', boxShadow: '0 4px 14px rgba(5,150,105,0.35)' }}
             >

@@ -30,7 +30,7 @@ export function useExport(): ExportState {
   }, [])
 
   const startExport = useCallback(async () => {
-    const { segments, clips, projectSettings } = useAppStore.getState()
+    const { segments, clips, projectSettings, transitions, adjustmentLayers } = useAppStore.getState()
 
     const v1Segs = segments.filter((s) => s.trackIndex === 0)
     if (v1Segs.length === 0) {
@@ -44,7 +44,6 @@ export function useExport(): ExportState {
     setLabel('Preparing...')
     setErrorMsg('')
 
-    // Build clip data map (read File → ArrayBuffer)
     const clipData: Record<string, { buffer: ArrayBuffer; name: string }> = {}
     const needed = new Set(v1Segs.map((s) => s.clipId))
 
@@ -70,7 +69,8 @@ export function useExport(): ExportState {
         setProgress(1)
         setLabel('Done!')
         setStatus('done')
-        downloadBuffer(msg.buffer, 'browsercutter-export.mp4')
+        const ext = projectSettings.format === 'webm' ? 'webm' : 'mp4'
+        downloadBuffer(msg.buffer, `browsercutter-export.${ext}`)
         workerRef.current = null
       } else if (msg.type === 'error') {
         setErrorMsg(msg.message)
@@ -93,6 +93,10 @@ export function useExport(): ExportState {
         clipData,
         fps: projectSettings.fps,
         resolution: projectSettings.resolution,
+        transitions,
+        adjustmentLayers,
+        format: projectSettings.format,
+        quality: projectSettings.quality,
       },
       transferBuffers,
     )

@@ -98,6 +98,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     resolution: '1920x1080',
     fps: 30,
     format: 'mp4',
+    quality: 'good',
     autoDetectBpm: true,
     snapToBeat: true,
     hardwareAcceleration: false,
