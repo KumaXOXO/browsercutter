@@ -189,6 +189,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       clips,
       isPlaying: false,
       playheadPosition: 0,
+      selectedElement: null,
       _history: [],
       _future: [],
     })

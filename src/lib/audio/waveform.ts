@@ -41,11 +41,9 @@ export async function getWaveformSamples(file: File, clipId: string): Promise<Fl
   const existing = inFlight.get(clipId)
   if (existing) return existing
 
-  const promise = decodeWithWorker(file, clipId).then((samples) => {
-    cache.set(clipId, samples)
-    inFlight.delete(clipId)
-    return samples
-  })
+  const promise = decodeWithWorker(file, clipId)
+    .then((samples) => { cache.set(clipId, samples); return samples })
+    .finally(() => inFlight.delete(clipId))
   inFlight.set(clipId, promise)
   return promise
 }
@@ -69,10 +67,12 @@ async function decodeWithWorker(file: File, clipId: string): Promise<Float32Arra
         resolve(e.data.samples)
       }
       w.addEventListener('message', handler)
-      w.onerror = (err) => {
+      const errorHandler = (err: ErrorEvent) => {
         w.removeEventListener('message', handler)
+        w.removeEventListener('error', errorHandler)
         reject(err)
       }
+      w.addEventListener('error', errorHandler, { once: true })
       // Transfer ArrayBuffer to worker (zero-copy)
       w.postMessage({ buffer, clipId }, [buffer])
     })

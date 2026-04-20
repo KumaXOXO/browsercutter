@@ -1,5 +1,5 @@
 // src/components/preview/VideoPreview.tsx
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect, useMemo, useState } from 'react'
 import { Film } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import { formatTime } from '../../lib/utils'
@@ -29,7 +29,7 @@ export default function VideoPreview() {
   const audioUrlRef = useRef<string | null>(null)
   const activeAudioSegRef = useRef<Segment | null>(null)
 
-  const imgUrlRef = useRef<string | null>(null)
+  const [imgUrl, setImgUrl] = useState<string | null>(null)
 
   const playAbortRef = useRef({ cancelled: false })
   const cancelPlayRef = useRef<() => void>(() => {})
@@ -72,7 +72,7 @@ export default function VideoPreview() {
 
     // Check transition after this segment (fade out at end)
     const transAfter = transitions.find((t) => t.afterSegmentId === activeSeg.id && t.type === 'fade')
-    if (transAfter) {
+    if (transAfter && transAfter.duration > 0) {
       const fadeStart = segEnd - transAfter.duration
       if (playheadPosition >= fadeStart) {
         return Math.min(1, (playheadPosition - fadeStart) / transAfter.duration)
@@ -81,7 +81,7 @@ export default function VideoPreview() {
 
     // Check transition before this segment (fade in at start)
     const transBefore = transitions.find((t) => t.beforeSegmentId === activeSeg.id && t.type === 'fade')
-    if (transBefore && posInSeg < transBefore.duration) {
+    if (transBefore && transBefore.duration > 0 && posInSeg < transBefore.duration) {
       return Math.max(0, 1 - posInSeg / transBefore.duration)
     }
 
@@ -101,12 +101,12 @@ export default function VideoPreview() {
     return () => { if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null } }
   }, [activeClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load image blob URL for image clips
+  // Load image blob URL for image clips — must be state (not ref) to trigger re-render
   useEffect(() => {
-    if (imgUrlRef.current) { URL.revokeObjectURL(imgUrlRef.current); imgUrlRef.current = null }
-    if (!activeClip?.file || activeClip.type !== 'image') return
-    imgUrlRef.current = URL.createObjectURL(activeClip.file)
-    return () => { if (imgUrlRef.current) { URL.revokeObjectURL(imgUrlRef.current); imgUrlRef.current = null } }
+    if (!activeClip?.file || activeClip.type !== 'image') { setImgUrl(null); return }
+    const url = URL.createObjectURL(activeClip.file)
+    setImgUrl(url)
+    return () => URL.revokeObjectURL(url)
   }, [activeClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load audio object URL when audio clip changes (only when not playing)
@@ -302,9 +302,9 @@ export default function VideoPreview() {
           }}
         />
         {/* Image clip display */}
-        {isImageClip && imgUrlRef.current && (
+        {isImageClip && imgUrl && (
           <img
-            src={imgUrlRef.current}
+            src={imgUrl}
             style={{
               position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain',
               filter: buildCSSFilter(activeSeg?.effects ?? []) || undefined,

@@ -100,7 +100,7 @@ export function startVideoTick(params: VideoTickParams): void {
     }
     stallCountRef.current = 0
 
-    const currentPlayhead = seg.startOnTimeline + (rawTime - seg.inPoint)
+    const currentPlayhead = seg.startOnTimeline + (rawTime - seg.inPoint) / Math.max(0.01, seg.speed ?? 1)
     setPlayheadPosition(currentPlayhead)
 
     // Sync audio track: find any audio segment at current playhead (skip muted)

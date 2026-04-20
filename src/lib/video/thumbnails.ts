@@ -2,6 +2,7 @@
 // Extracts a single video frame at a given inPoint using an async seek chain.
 // Returns a blob URL (caller must not revoke — cached per clipId).
 
+const CACHE_MAX = 200
 const cache = new Map<string, string>()
 const inFlight = new Map<string, Promise<string | null>>()
 const THUMB_W = 160
@@ -16,7 +17,13 @@ export async function getThumbnail(clipId: string, file: File, inPoint: number):
   if (existing) return existing
 
   const promise = extractFrame(file, inPoint).then((url) => {
-    if (url) cache.set(key, url)
+    if (url) {
+      if (cache.size >= CACHE_MAX) {
+        const oldest = cache.keys().next().value
+        if (oldest) { URL.revokeObjectURL(cache.get(oldest)!); cache.delete(oldest) }
+      }
+      cache.set(key, url)
+    }
     inFlight.delete(key)
     return url
   })
