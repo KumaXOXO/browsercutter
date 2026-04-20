@@ -1,6 +1,8 @@
 // src/components/panels/MediaPanel/VideoGrid.tsx
-import { Play } from 'lucide-react'
+import { useState } from 'react'
+import { Play, Plus } from 'lucide-react'
 import type { Clip } from '../../../types'
+import { useAppStore } from '../../../store/useAppStore'
 
 export default function VideoGrid({ clips }: { clips: Clip[] }) {
   if (clips.length === 0) {
@@ -15,14 +17,38 @@ export default function VideoGrid({ clips }: { clips: Clip[] }) {
 }
 
 function VideoThumb({ clip }: { clip: Clip }) {
+  const [hovered, setHovered] = useState(false)
+  const { segments, addSegment } = useAppStore()
+
+  const handleAddToTimeline = () => {
+    const trackIndex = clip.type === 'audio' ? 2 : 0
+    const endOfTrack = segments
+      .filter((s) => s.trackIndex === trackIndex)
+      .reduce((max, s) => Math.max(max, s.startOnTimeline + (s.outPoint - s.inPoint)), 0)
+    addSegment({
+      id: crypto.randomUUID(),
+      clipId: clip.id,
+      trackIndex,
+      startOnTimeline: endOfTrack,
+      inPoint: 0,
+      outPoint: clip.duration,
+    })
+  }
+
   return (
     <div
       draggable
       onDragStart={(e) => e.dataTransfer.setData('clipId', clip.id)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       className="rounded-lg overflow-hidden cursor-grab transition-all duration-200"
-      style={{ background: 'var(--surface2)', border: '1px solid var(--border-subtle)' }}
-      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.4)' }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}
+      style={{
+        background: 'var(--surface2)',
+        border: `1px solid ${hovered ? 'rgba(255,255,255,0.2)' : 'var(--border-subtle)'}`,
+        transform: hovered ? 'translateY(-1px)' : '',
+        boxShadow: hovered ? '0 4px 16px rgba(0,0,0,0.4)' : '',
+        position: 'relative',
+      }}
     >
       <div className="relative flex items-center justify-center" style={{ aspectRatio: '16/9', background: 'rgba(124,58,237,0.15)' }}>
         {clip.thumbnail
@@ -34,6 +60,21 @@ function VideoThumb({ clip }: { clip: Clip }) {
         <span className="absolute bottom-1 right-1 text-white text-xs font-mono" style={{ background: 'rgba(0,0,0,0.65)', padding: '1px 5px', borderRadius: 3 }}>
           {formatDuration(clip.duration)}
         </span>
+        {hovered && (
+          <button
+            title="Add to timeline"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); handleAddToTimeline() }}
+            style={{
+              position: 'absolute', bottom: 4, right: 4,
+              background: 'rgba(225,29,72,0.9)', border: 'none', borderRadius: 4,
+              cursor: 'pointer', padding: '3px 5px', display: 'flex', alignItems: 'center', gap: 2,
+              color: 'white', fontSize: 9, fontWeight: 700, zIndex: 2,
+            }}
+          >
+            <Plus size={9} /> Add
+          </button>
+        )}
       </div>
       <div style={{ padding: '6px 8px' }}>
         <p className="text-xs font-medium truncate">{clip.name}</p>

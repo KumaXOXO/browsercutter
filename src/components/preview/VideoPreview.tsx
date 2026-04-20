@@ -5,6 +5,7 @@ import { useAppStore } from '../../store/useAppStore'
 import { formatTime } from '../../lib/utils'
 import TextOverlayRenderer from './TextOverlayRenderer'
 import { buildCSSFilter, hasVignette, vignetteOpacity } from '../../lib/video/effectsFilter'
+import { playWhenReady, startVideoTick, startAudioOnlyTick } from '../../lib/video/playbackEngine'
 import type { Segment } from '../../types'
 
 export default function VideoPreview() {
@@ -18,38 +19,36 @@ export default function VideoPreview() {
   const segmentsRef = useRef(segments)
   const clipsRef = useRef(clips)
 
-  // Audio element for the audio track (trackIndex 2)
   const audioRef = useRef<HTMLAudioElement>(new Audio())
   const audioUrlRef = useRef<string | null>(null)
   const activeAudioSegRef = useRef<Segment | null>(null)
 
-  // Keep refs in sync for RAF tick (avoids stale closures)
+  const playAbortRef = useRef({ cancelled: false })
+  const cancelPlayRef = useRef<() => void>(() => {})
+
   segmentsRef.current = segments
   clipsRef.current = clips
 
   const activeSeg = useMemo(() =>
     segments.find(
-      (s) => s.trackIndex === 0 &&
+      (s) => s.trackIndex === 0 && !s.hidden &&
         playheadPosition >= s.startOnTimeline &&
         playheadPosition < s.startOnTimeline + (s.outPoint - s.inPoint),
     ) ?? null,
     [segments, playheadPosition],
   )
   const activeClip = activeSeg ? clips.find((c) => c.id === activeSeg.clipId) ?? null : null
-
-  // Keep activeSegRef in sync
   activeSegRef.current = activeSeg
 
   const activeAudioSeg = useMemo(() =>
     segments.find(
-      (s) => s.trackIndex === 2 &&
+      (s) => s.trackIndex === 2 && !s.muted &&
         playheadPosition >= s.startOnTimeline &&
         playheadPosition < s.startOnTimeline + (s.outPoint - s.inPoint),
     ) ?? null,
     [segments, playheadPosition],
   )
   const activeAudioClip = activeAudioSeg ? clips.find((c) => c.id === activeAudioSeg.clipId) ?? null : null
-
   activeAudioSegRef.current = activeAudioSeg
 
   // Load video object URL when clip changes (only when not playing)
@@ -57,54 +56,24 @@ export default function VideoPreview() {
     if (isPlaying) return
     const video = videoRef.current
     if (!video) return
-
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current)
-      objectUrlRef.current = null
-    }
-
-    if (!activeClip?.file) {
-      video.src = ''
-      return
-    }
-
+    if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null }
+    if (!activeClip?.file) { video.src = ''; return }
     const url = URL.createObjectURL(activeClip.file)
     objectUrlRef.current = url
     video.src = url
-
-    return () => {
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current)
-        objectUrlRef.current = null
-      }
-    }
+    return () => { if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null } }
   }, [activeClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load audio object URL when audio clip changes (only when not playing)
   useEffect(() => {
     if (isPlaying) return
     const audio = audioRef.current
-
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current)
-      audioUrlRef.current = null
-    }
-
-    if (!activeAudioClip?.file) {
-      audio.src = ''
-      return
-    }
-
+    if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null }
+    if (!activeAudioClip?.file) { audio.src = ''; return }
     const url = URL.createObjectURL(activeAudioClip.file)
     audioUrlRef.current = url
     audio.src = url
-
-    return () => {
-      if (audioUrlRef.current) {
-        URL.revokeObjectURL(audioUrlRef.current)
-        audioUrlRef.current = null
-      }
-    }
+    return () => { if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null } }
   }, [activeAudioClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Seek video when playhead moves while paused
@@ -123,7 +92,7 @@ export default function VideoPreview() {
     audio.currentTime = seg.inPoint + (playheadPosition - seg.startOnTimeline)
   }, [playheadPosition]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Apply volume and playbackRate to video whenever the active segment changes
+  // Apply volume and playbackRate to video when active segment changes
   useEffect(() => {
     const video = videoRef.current
     if (!video || !activeSeg) return
@@ -131,7 +100,7 @@ export default function VideoPreview() {
     video.playbackRate = activeSeg.speed ?? 1
   }, [activeSeg?.id, activeSeg?.volume, activeSeg?.speed]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Apply volume to audio element whenever the active audio segment changes
+  // Apply volume to audio element when active audio segment changes
   useEffect(() => {
     if (!activeAudioSeg) return
     audioRef.current.volume = activeAudioSeg.volume ?? 1
@@ -148,121 +117,102 @@ export default function VideoPreview() {
       return
     }
 
-    if (!video) {
-      setIsPlaying(false)
-      return
+    playAbortRef.current = { cancelled: false }
+    let audioOnlyCleanup = () => {}
+
+    // Resolve the starting video segment (skip hidden segments)
+    let startSeg = activeSeg
+    if (startSeg?.hidden) {
+      const nextVisible = segmentsRef.current
+        .filter((s) => s.trackIndex === 0 && !s.hidden && s.startOnTimeline >= startSeg!.startOnTimeline)
+        .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0] ?? null
+      if (!nextVisible) { setIsPlaying(false); return }
+      startSeg = nextVisible
     }
 
-    // If no segment at the current playhead, seek to the first available segment
-    let startSeg = activeSeg
     if (!startSeg) {
-      const firstSeg = [...segmentsRef.current]
-        .filter((s) => s.trackIndex === 0)
+      // No video segment at playhead — find first visible video segment on timeline
+      const firstVideoSeg = [...segmentsRef.current]
+        .filter((s) => s.trackIndex === 0 && !s.hidden)
         .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0] ?? null
 
-      if (!firstSeg) {
-        setIsPlaying(false)
-        return
-      }
+      if (!firstVideoSeg) {
+        // No video at all — try audio-only path
+        const firstAudioSeg = [...segmentsRef.current]
+          .filter((s) => s.trackIndex === 2)
+          .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0] ?? null
 
-      const clip = clipsRef.current.find((c) => c.id === firstSeg.clipId)
-      if (!clip?.file) {
-        setIsPlaying(false)
-        return
-      }
-
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
-      const url = URL.createObjectURL(clip.file)
-      objectUrlRef.current = url
-      video.src = url
-      video.currentTime = firstSeg.inPoint
-      video.volume = firstSeg.volume ?? 1
-      video.playbackRate = firstSeg.speed ?? 1
-      activeSegRef.current = firstSeg
-      setPlayheadPosition(firstSeg.startOnTimeline)
-      startSeg = firstSeg
-    }
-
-    void startSeg // used to satisfy linter — activeSegRef was updated above
-
-    video.play().catch(() => setIsPlaying(false))
-
-    // Start audio if an audio segment is active
-    if (activeAudioSegRef.current && audioRef.current.src) {
-      audioRef.current.play().catch(() => {})
-    }
-
-    const tick = () => {
-      const seg = activeSegRef.current
-      if (!seg || !videoRef.current) return
-
-      const rawTime = videoRef.current.currentTime
-      // Skip until seek settles; bail out if stalled for >60 frames
-      if (rawTime < seg.inPoint) {
-        stallCountRef.current += 1
-        if (stallCountRef.current > 60) {
-          stallCountRef.current = 0
+        if (!firstAudioSeg) {
           setIsPlaying(false)
           return
         }
-        rafRef.current = requestAnimationFrame(tick)
-        return
+
+        const audioClip = clipsRef.current.find((c) => c.id === firstAudioSeg.clipId)
+        if (!audioClip?.file) { setIsPlaying(false); return }
+        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+        const audioUrl = URL.createObjectURL(audioClip.file)
+        audioUrlRef.current = audioUrl
+        const audio = audioRef.current
+        audio.src = audioUrl
+        audio.currentTime = firstAudioSeg.inPoint
+        audio.volume = firstAudioSeg.volume ?? 1
+        setPlayheadPosition(firstAudioSeg.startOnTimeline)
+        activeSegRef.current = null
+
+        cancelPlayRef.current = playWhenReady(audio, () => setIsPlaying(false), playAbortRef.current)
+        // Mutually exclusive: audio-only RAF runs here, video RAF below does not
+        audioOnlyCleanup = startAudioOnlyTick({
+          audioRef,
+          rafRef,
+          startOnTimeline: firstAudioSeg.startOnTimeline,
+          inPoint: firstAudioSeg.inPoint,
+          setPlayheadPosition,
+          setIsPlaying,
+        })
+      } else {
+        if (!video) { setIsPlaying(false); return }
+        const clip = clipsRef.current.find((c) => c.id === firstVideoSeg.clipId)
+        if (!clip?.file) { setIsPlaying(false); return }
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+        const url = URL.createObjectURL(clip.file)
+        objectUrlRef.current = url
+        video.src = url
+        video.currentTime = firstVideoSeg.inPoint
+        video.volume = firstVideoSeg.volume ?? 1
+        video.playbackRate = firstVideoSeg.speed ?? 1
+        activeSegRef.current = firstVideoSeg
+        setPlayheadPosition(firstVideoSeg.startOnTimeline)
+        startSeg = firstVideoSeg
       }
-      stallCountRef.current = 0
+    }
 
-      const currentPlayhead = seg.startOnTimeline + (rawTime - seg.inPoint)
-      setPlayheadPosition(currentPlayhead)
-
-      // Sync audio: find any audio segment covering the current playhead
-      const audioSeg = segmentsRef.current.find(
-        (s) => s.trackIndex === 2 &&
-          currentPlayhead >= s.startOnTimeline &&
-          currentPlayhead < s.startOnTimeline + (s.outPoint - s.inPoint),
-      )
-      if (audioSeg && audioRef.current.paused && audioRef.current.src) {
+    if (startSeg) {
+      // Video path — mutually exclusive with audio-only path above
+      if (!video) { setIsPlaying(false); return }
+      cancelPlayRef.current = playWhenReady(video, () => setIsPlaying(false), playAbortRef.current)
+      if (activeAudioSegRef.current && audioRef.current.src) {
         audioRef.current.play().catch(() => {})
-      } else if (!audioSeg && !audioRef.current.paused) {
-        audioRef.current.pause()
       }
-
-      if (rawTime >= seg.outPoint - 0.05) {
-        const nextSeg = segmentsRef.current
-          .filter((s) => s.trackIndex === 0 && s.startOnTimeline > seg.startOnTimeline)
-          .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0]
-
-        if (nextSeg) {
-          const nextClip = clipsRef.current.find((c) => c.id === nextSeg.clipId)
-          if (nextClip?.file) {
-            if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
-            objectUrlRef.current = null
-            const url = URL.createObjectURL(nextClip.file)
-            objectUrlRef.current = url
-            videoRef.current.src = url
-            videoRef.current.currentTime = nextSeg.inPoint
-            videoRef.current.volume = nextSeg.volume ?? 1
-            videoRef.current.playbackRate = nextSeg.speed ?? 1
-            videoRef.current.play().catch(() => {})
-            activeSegRef.current = nextSeg
-          } else {
-            if (objectUrlRef.current) {
-              URL.revokeObjectURL(objectUrlRef.current)
-              objectUrlRef.current = null
-            }
-            setIsPlaying(false)
-            return
-          }
-        } else {
-          setIsPlaying(false)
-          return
-        }
-      }
-
-      rafRef.current = requestAnimationFrame(tick)
+      startVideoTick({
+        videoRef,
+        audioRef,
+        segmentsRef,
+        clipsRef,
+        activeSegRef,
+        objectUrlRef,
+        stallCountRef,
+        rafRef,
+        cancelPlayRef,
+        playAbortRef,
+        setPlayheadPosition,
+        setIsPlaying,
+      })
     }
-
-    rafRef.current = requestAnimationFrame(tick)
 
     return () => {
+      playAbortRef.current.cancelled = true
+      cancelPlayRef.current()
+      audioOnlyCleanup()
       cancelAnimationFrame(rafRef.current)
       videoRef.current?.pause()
       audioRef.current.pause()

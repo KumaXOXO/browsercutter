@@ -1,6 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useAppStore } from './useAppStore'
-import type { TextOverlay } from '../types'
+import type { Segment, TextOverlay } from '../types'
+
+const makeSeg = (id: string, overrides?: Partial<Segment>): Segment => ({
+  id,
+  clipId: 'clip1',
+  trackIndex: 0,
+  startOnTimeline: 0,
+  inPoint: 0,
+  outPoint: 5,
+  ...overrides,
+})
 
 const makeOverlay = (id: string, overrides?: Partial<TextOverlay>): TextOverlay => ({
   id,
@@ -13,6 +23,44 @@ const makeOverlay = (id: string, overrides?: Partial<TextOverlay>): TextOverlay 
   x: 0.5,
   y: 0.85,
   ...overrides,
+})
+
+describe('segment hide/mute + undo', () => {
+  beforeEach(() => {
+    useAppStore.setState({ segments: [], _history: [], _future: [] })
+  })
+
+  it('updateSegment sets hidden:true', () => {
+    useAppStore.getState().addSegment(makeSeg('a'))
+    useAppStore.getState().updateSegment('a', { hidden: true })
+    expect(useAppStore.getState().segments.find((s) => s.id === 'a')?.hidden).toBe(true)
+  })
+
+  it('updateSegment sets hidden:false', () => {
+    useAppStore.getState().addSegment(makeSeg('a', { hidden: true }))
+    useAppStore.getState().updateSegment('a', { hidden: false })
+    expect(useAppStore.getState().segments.find((s) => s.id === 'a')?.hidden).toBe(false)
+  })
+
+  it('updateSegment sets muted:true', () => {
+    useAppStore.getState().addSegment(makeSeg('a'))
+    useAppStore.getState().updateSegment('a', { muted: true })
+    expect(useAppStore.getState().segments.find((s) => s.id === 'a')?.muted).toBe(true)
+  })
+
+  it('undo restores hidden to undefined after updateSegment', () => {
+    useAppStore.getState().addSegment(makeSeg('a'))
+    useAppStore.getState().updateSegment('a', { hidden: true })
+    useAppStore.getState().undo()
+    expect(useAppStore.getState().segments.find((s) => s.id === 'a')?.hidden).toBeUndefined()
+  })
+
+  it('undo restores muted to undefined after updateSegment', () => {
+    useAppStore.getState().addSegment(makeSeg('a'))
+    useAppStore.getState().updateSegment('a', { muted: true })
+    useAppStore.getState().undo()
+    expect(useAppStore.getState().segments.find((s) => s.id === 'a')?.muted).toBeUndefined()
+  })
 })
 
 describe('textOverlay store actions', () => {
