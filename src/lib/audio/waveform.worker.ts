@@ -36,7 +36,7 @@ self.onmessage = async (e: MessageEvent<{ buffer: ArrayBuffer; clipId: string }>
       for (let i = 0; i < samples.length; i++) samples[i] /= max
     }
 
-    self.postMessage({ clipId, samples }, [samples.buffer])
+    ;(self as unknown as Worker).postMessage({ clipId, samples }, [samples.buffer])
   } catch {
     self.postMessage({ clipId, samples: new Float32Array(0) })
   }
