@@ -15,7 +15,7 @@ const TRANSITION_DEFS: { type: TransitionType; label: string; symbol: string; de
 ]
 
 export default function TransitionsPanel() {
-  const { segments, clips, transitions, addTransition, removeTransition } = useAppStore()
+  const { segments, clips, transitions, addTransition, updateTransition, removeTransition } = useAppStore()
   const [selected, setSelected] = useState<TransitionType | null>(null)
 
   const v1Segments = [...segments.filter((s) => s.trackIndex === 0)]
@@ -104,18 +104,30 @@ export default function TransitionsPanel() {
             return (
               <div
                 key={t.id}
-                className="flex items-center justify-between text-xs rounded-lg"
-                style={{ padding: '6px 10px', marginBottom: 3, background: 'rgba(225,29,72,0.08)', border: '1px solid rgba(225,29,72,0.2)' }}
+                className="rounded-lg"
+                style={{ padding: '8px 10px', marginBottom: 4, background: 'rgba(225,29,72,0.08)', border: '1px solid rgba(225,29,72,0.2)' }}
               >
-                <span style={{ color: '#F43F5E', fontWeight: 600 }}>{t.type}</span>
-                <span style={{ color: 'var(--muted-subtle)' }}>{clipA?.name ?? '?'} → {clipB?.name ?? '?'}</span>
-                <button
-                  onClick={() => removeTransition(t.id)}
-                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--muted-subtle)', padding: 2 }}
-                  title="Remove"
-                >
-                  <X size={11} />
-                </button>
+                <div className="flex items-center justify-between text-xs mb-1.5">
+                  <span style={{ color: '#F43F5E', fontWeight: 600 }}>{t.type}</span>
+                  <span style={{ color: 'var(--muted-subtle)', fontSize: 10 }}>{clipA?.name ?? '?'} → {clipB?.name ?? '?'}</span>
+                  <button
+                    onClick={() => removeTransition(t.id)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--muted-subtle)', padding: 2 }}
+                    title="Remove"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span style={{ color: 'var(--muted-subtle)', fontSize: 10, whiteSpace: 'nowrap' }}>Duration</span>
+                  <input
+                    type="range" min="0.1" max="3" step="0.1"
+                    value={t.duration}
+                    onChange={(e) => updateTransition(t.id, { duration: parseFloat(e.target.value) })}
+                    style={{ flex: 1, accentColor: '#F43F5E', height: 4 }}
+                  />
+                  <span style={{ color: 'var(--muted-subtle)', fontSize: 10, minWidth: 28, textAlign: 'right' }}>{t.duration.toFixed(1)}s</span>
+                </div>
               </div>
             )
           })}

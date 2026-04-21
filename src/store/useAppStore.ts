@@ -33,6 +33,7 @@ interface AppState {
   textOverlays: TextOverlay[]
   playheadPosition: number  // seconds
   isPlaying: boolean
+  masterVolume: number
 
   // ─── Undo / Redo ───
   _history: TimelineSnapshot[]
@@ -66,11 +67,14 @@ interface AppState {
   removeAdjustmentLayer: (id: string) => void
 
   addTransition: (transition: Transition) => void
+  updateTransition: (id: string, patch: Partial<Transition>) => void
   removeTransition: (id: string) => void
 
   updateBpmConfig: (patch: Partial<BpmConfig>) => void
   setPlayheadPosition: (pos: number) => void
   setIsPlaying: (playing: boolean) => void
+  setMasterVolume: (volume: number) => void
+  loadProject: (data: Record<string, unknown>) => void
 
   undo: () => void
   redo: () => void
@@ -102,6 +106,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     autoDetectBpm: true,
     snapToBeat: true,
     hardwareAcceleration: false,
+    showClipThumbnails: false,
   },
 
   // ─── Media library ───
@@ -114,6 +119,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   textOverlays: [],
   playheadPosition: 0,
   isPlaying: false,
+  masterVolume: 1,
 
   // ─── Undo / Redo ───
   _history: [],
@@ -159,12 +165,38 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeAdjustmentLayer: (id) => set((s) => ({ adjustmentLayers: s.adjustmentLayers.filter((l) => l.id !== id) })),
 
   addTransition: (transition) => set((s) => ({ transitions: [...s.transitions, transition] })),
+  updateTransition: (id, patch) =>
+    set((s) => ({ transitions: s.transitions.map((t) => t.id === id ? { ...t, ...patch } : t) })),
   removeTransition: (id) => set((s) => ({ transitions: s.transitions.filter((t) => t.id !== id) })),
 
   updateBpmConfig: (patch) =>
     set((s) => ({ bpmConfig: { ...s.bpmConfig, ...patch } })),
   setPlayheadPosition: (pos) => set({ playheadPosition: pos }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
+  setMasterVolume: (volume) => set({ masterVolume: volume }),
+
+  loadProject: (data) => {
+    const existing = get()
+    const clips = (data.clips as Array<Record<string, unknown>>).map((c) => ({
+      ...c,
+      file: null as unknown as File,
+    })) as Clip[]
+    set({
+      projectName: (data.projectName as string | undefined) ?? existing.projectName,
+      projectSettings: { ...existing.projectSettings, ...(data.projectSettings as Partial<ProjectSettings>) },
+      segments: (data.segments as Segment[]) ?? [],
+      textOverlays: (data.textOverlays as TextOverlay[] | undefined) ?? [],
+      bpmConfig: (data.bpmConfig as BpmConfig | undefined) ?? existing.bpmConfig,
+      transitions: (data.transitions as Transition[] | undefined) ?? [],
+      adjustmentLayers: (data.adjustmentLayers as AdjustmentLayer[] | undefined) ?? [],
+      clips,
+      isPlaying: false,
+      playheadPosition: 0,
+      selectedElement: null,
+      _history: [],
+      _future: [],
+    })
+  },
 
   undo: () => set((s) => {
     if (s._history.length === 0) return s

@@ -36,6 +36,8 @@ export interface Segment {
   volume?: number          // 0–1, default 1.0
   speed?: number           // 0.25–4.0, default 1.0
   effects?: Effect[]
+  hidden?: boolean         // if true, skip in preview and export
+  muted?: boolean          // if true, suppress audio for this segment
 }
 
 export interface Effect {
@@ -87,6 +89,7 @@ export interface ProjectSettings {
   autoDetectBpm: boolean
   snapToBeat: boolean
   hardwareAcceleration: boolean
+  showClipThumbnails: boolean
 }
 
 export type SelectedElementType = 'segment' | 'adjustment' | 'text' | 'transition' | null

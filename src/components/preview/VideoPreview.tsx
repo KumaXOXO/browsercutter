@@ -1,14 +1,19 @@
 // src/components/preview/VideoPreview.tsx
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect, useMemo, useState } from 'react'
 import { Film } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import { formatTime } from '../../lib/utils'
 import TextOverlayRenderer from './TextOverlayRenderer'
 import { buildCSSFilter, hasVignette, vignetteOpacity } from '../../lib/video/effectsFilter'
+import { playWhenReady, startVideoTick, startAudioOnlyTick } from '../../lib/video/playbackEngine'
 import type { Segment } from '../../types'
 
 export default function VideoPreview() {
-  const { segments, clips, playheadPosition, isPlaying, setPlayheadPosition, setIsPlaying } = useAppStore()
+  const {
+    segments, clips, playheadPosition, isPlaying,
+    setPlayheadPosition, setIsPlaying,
+    masterVolume, transitions,
+  } = useAppStore()
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const objectUrlRef = useRef<string | null>(null)
@@ -17,94 +22,106 @@ export default function VideoPreview() {
   const activeSegRef = useRef<Segment | null>(null)
   const segmentsRef = useRef(segments)
   const clipsRef = useRef(clips)
+  const masterVolumeRef = useRef(masterVolume)
+  const transitionsRef = useRef(transitions)
 
-  // Audio element for the audio track (trackIndex 2)
   const audioRef = useRef<HTMLAudioElement>(new Audio())
   const audioUrlRef = useRef<string | null>(null)
   const activeAudioSegRef = useRef<Segment | null>(null)
 
-  // Keep refs in sync for RAF tick (avoids stale closures)
+  const [imgUrl, setImgUrl] = useState<string | null>(null)
+
+  const transitionVideoRef = useRef<HTMLVideoElement>(null)
+  const transitionUrlRef = useRef<string | null>(null)
+
+  const playAbortRef = useRef({ cancelled: false })
+  const cancelPlayRef = useRef<() => void>(() => {})
+
   segmentsRef.current = segments
   clipsRef.current = clips
+  masterVolumeRef.current = masterVolume
+  transitionsRef.current = transitions
 
   const activeSeg = useMemo(() =>
     segments.find(
-      (s) => s.trackIndex === 0 &&
+      (s) => s.trackIndex === 0 && !s.hidden &&
         playheadPosition >= s.startOnTimeline &&
-        playheadPosition < s.startOnTimeline + (s.outPoint - s.inPoint),
+        playheadPosition < s.startOnTimeline + (s.outPoint - s.inPoint) / Math.max(0.01, s.speed ?? 1),
     ) ?? null,
     [segments, playheadPosition],
   )
   const activeClip = activeSeg ? clips.find((c) => c.id === activeSeg.clipId) ?? null : null
-
-  // Keep activeSegRef in sync
   activeSegRef.current = activeSeg
 
   const activeAudioSeg = useMemo(() =>
     segments.find(
-      (s) => s.trackIndex === 2 &&
+      (s) => s.trackIndex === 2 && !s.muted &&
         playheadPosition >= s.startOnTimeline &&
         playheadPosition < s.startOnTimeline + (s.outPoint - s.inPoint),
     ) ?? null,
     [segments, playheadPosition],
   )
   const activeAudioClip = activeAudioSeg ? clips.find((c) => c.id === activeAudioSeg.clipId) ?? null : null
-
   activeAudioSegRef.current = activeAudioSeg
 
-  // Load video object URL when clip changes (only when not playing)
+  const isImageClip = activeClip?.type === 'image'
+
+  // Compute fade overlay opacity — checks transitions around current playhead
+  const fadeOverlayOpacity = useMemo(() => {
+    if (!activeSeg) return 0
+    const segDuration = (activeSeg.outPoint - activeSeg.inPoint) / Math.max(0.01, activeSeg.speed ?? 1)
+    const segEnd = activeSeg.startOnTimeline + segDuration
+    const posInSeg = playheadPosition - activeSeg.startOnTimeline
+
+    // Check transition after this segment (fade out at end)
+    const transAfter = transitions.find((t) => t.afterSegmentId === activeSeg.id && t.type === 'fade')
+    if (transAfter && transAfter.duration > 0) {
+      const fadeStart = segEnd - transAfter.duration
+      if (playheadPosition >= fadeStart) {
+        return Math.min(1, (playheadPosition - fadeStart) / transAfter.duration)
+      }
+    }
+
+    // Check transition before this segment (fade in at start)
+    const transBefore = transitions.find((t) => t.beforeSegmentId === activeSeg.id && t.type === 'fade')
+    if (transBefore && transBefore.duration > 0 && posInSeg < transBefore.duration) {
+      return Math.max(0, 1 - posInSeg / transBefore.duration)
+    }
+
+    return 0
+  }, [activeSeg, playheadPosition, transitions])
+
+  // Load video object URL when clip changes (only when not playing, skip image clips)
   useEffect(() => {
     if (isPlaying) return
     const video = videoRef.current
     if (!video) return
-
-    if (objectUrlRef.current) {
-      URL.revokeObjectURL(objectUrlRef.current)
-      objectUrlRef.current = null
-    }
-
-    if (!activeClip?.file) {
-      video.src = ''
-      return
-    }
-
+    if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null }
+    if (!activeClip?.file || activeClip.type === 'image') { video.src = ''; return }
     const url = URL.createObjectURL(activeClip.file)
     objectUrlRef.current = url
     video.src = url
+    return () => { if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null } }
+  }, [activeClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-    return () => {
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current)
-        objectUrlRef.current = null
-      }
-    }
+  // Load image blob URL for image clips — must be state (not ref) to trigger re-render
+  useEffect(() => {
+    if (!activeClip?.file || activeClip.type !== 'image') { setImgUrl(null); return }
+    const url = URL.createObjectURL(activeClip.file)
+    setImgUrl(url)
+    return () => URL.revokeObjectURL(url)
   }, [activeClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load audio object URL when audio clip changes (only when not playing)
   useEffect(() => {
     if (isPlaying) return
     const audio = audioRef.current
-
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current)
-      audioUrlRef.current = null
-    }
-
-    if (!activeAudioClip?.file) {
-      audio.src = ''
-      return
-    }
-
+    if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null }
+    if (!activeAudioClip?.file) { audio.src = ''; return }
     const url = URL.createObjectURL(activeAudioClip.file)
     audioUrlRef.current = url
     audio.src = url
-
-    return () => {
-      if (audioUrlRef.current) {
-        URL.revokeObjectURL(audioUrlRef.current)
-        audioUrlRef.current = null
-      }
-    }
+    return () => { if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null } }
   }, [activeAudioClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Seek video when playhead moves while paused
@@ -112,7 +129,7 @@ export default function VideoPreview() {
     const video = videoRef.current
     const seg = activeSegRef.current
     if (isPlaying || !video || !seg) return
-    video.currentTime = seg.inPoint + (playheadPosition - seg.startOnTimeline)
+    video.currentTime = seg.inPoint + (playheadPosition - seg.startOnTimeline) * (seg.speed ?? 1)
   }, [playheadPosition]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Seek audio when playhead moves while paused
@@ -123,19 +140,20 @@ export default function VideoPreview() {
     audio.currentTime = seg.inPoint + (playheadPosition - seg.startOnTimeline)
   }, [playheadPosition]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Apply volume and playbackRate to video whenever the active segment changes
+  // Apply volume (with masterVolume), playbackRate, and muted to video when active segment changes
   useEffect(() => {
     const video = videoRef.current
     if (!video || !activeSeg) return
-    video.volume = activeSeg.volume ?? 1
+    video.volume = Math.min(1, (activeSeg.volume ?? 1) * masterVolume)
     video.playbackRate = activeSeg.speed ?? 1
-  }, [activeSeg?.id, activeSeg?.volume, activeSeg?.speed]) // eslint-disable-line react-hooks/exhaustive-deps
+    video.muted = activeSeg.muted ?? false
+  }, [activeSeg?.id, activeSeg?.volume, activeSeg?.speed, activeSeg?.muted, masterVolume]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Apply volume to audio element whenever the active audio segment changes
+  // Apply volume (with masterVolume) to audio element when active audio segment changes
   useEffect(() => {
     if (!activeAudioSeg) return
-    audioRef.current.volume = activeAudioSeg.volume ?? 1
-  }, [activeAudioSeg?.id, activeAudioSeg?.volume]) // eslint-disable-line react-hooks/exhaustive-deps
+    audioRef.current.volume = Math.min(1, (activeAudioSeg.volume ?? 1) * masterVolume)
+  }, [activeAudioSeg?.id, activeAudioSeg?.volume, masterVolume]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // RAF playback loop
   useEffect(() => {
@@ -148,124 +166,131 @@ export default function VideoPreview() {
       return
     }
 
-    if (!video) {
-      setIsPlaying(false)
-      return
+    playAbortRef.current = { cancelled: false }
+    let audioOnlyCleanup = () => {}
+
+    // Resolve the starting video segment (skip hidden segments)
+    let startSeg = activeSeg
+    if (startSeg?.hidden) {
+      const nextVisible = segmentsRef.current
+        .filter((s) => s.trackIndex === 0 && !s.hidden && s.startOnTimeline >= startSeg!.startOnTimeline)
+        .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0] ?? null
+      if (!nextVisible) { setIsPlaying(false); return }
+      startSeg = nextVisible
     }
 
-    // If no segment at the current playhead, seek to the first available segment
-    let startSeg = activeSeg
     if (!startSeg) {
-      const firstSeg = [...segmentsRef.current]
-        .filter((s) => s.trackIndex === 0)
+      // No video segment at playhead — find first visible video segment on timeline
+      const firstVideoSeg = [...segmentsRef.current]
+        .filter((s) => s.trackIndex === 0 && !s.hidden)
         .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0] ?? null
 
-      if (!firstSeg) {
-        setIsPlaying(false)
-        return
-      }
+      if (!firstVideoSeg) {
+        // No video at all — try audio-only path
+        const firstAudioSeg = [...segmentsRef.current]
+          .filter((s) => s.trackIndex === 2)
+          .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0] ?? null
 
-      const clip = clipsRef.current.find((c) => c.id === firstSeg.clipId)
-      if (!clip?.file) {
-        setIsPlaying(false)
-        return
-      }
-
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
-      const url = URL.createObjectURL(clip.file)
-      objectUrlRef.current = url
-      video.src = url
-      video.currentTime = firstSeg.inPoint
-      video.volume = firstSeg.volume ?? 1
-      video.playbackRate = firstSeg.speed ?? 1
-      activeSegRef.current = firstSeg
-      setPlayheadPosition(firstSeg.startOnTimeline)
-      startSeg = firstSeg
-    }
-
-    void startSeg // used to satisfy linter — activeSegRef was updated above
-
-    video.play().catch(() => setIsPlaying(false))
-
-    // Start audio if an audio segment is active
-    if (activeAudioSegRef.current && audioRef.current.src) {
-      audioRef.current.play().catch(() => {})
-    }
-
-    const tick = () => {
-      const seg = activeSegRef.current
-      if (!seg || !videoRef.current) return
-
-      const rawTime = videoRef.current.currentTime
-      // Skip until seek settles; bail out if stalled for >60 frames
-      if (rawTime < seg.inPoint) {
-        stallCountRef.current += 1
-        if (stallCountRef.current > 60) {
-          stallCountRef.current = 0
+        if (!firstAudioSeg) {
           setIsPlaying(false)
           return
         }
-        rafRef.current = requestAnimationFrame(tick)
-        return
+
+        const audioClip = clipsRef.current.find((c) => c.id === firstAudioSeg.clipId)
+        if (!audioClip?.file) { setIsPlaying(false); return }
+        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+        const audioUrl = URL.createObjectURL(audioClip.file)
+        audioUrlRef.current = audioUrl
+        const audio = audioRef.current
+        audio.src = audioUrl
+        audio.currentTime = firstAudioSeg.inPoint
+        audio.volume = Math.min(1, (firstAudioSeg.volume ?? 1) * masterVolumeRef.current)
+        setPlayheadPosition(firstAudioSeg.startOnTimeline)
+        activeSegRef.current = null
+
+        cancelPlayRef.current = playWhenReady(audio, () => setIsPlaying(false), playAbortRef.current)
+        audioOnlyCleanup = startAudioOnlyTick({
+          audioRef,
+          rafRef,
+          cancelPlayRef,
+          playAbortRef,
+          segmentsRef,
+          clipsRef,
+          audioUrlRef,
+          masterVolumeRef,
+          initialSeg: firstAudioSeg,
+          setPlayheadPosition,
+          setIsPlaying,
+        })
+      } else {
+        // Image clips don't use the video element for playback — skip play setup
+        const clip = clipsRef.current.find((c) => c.id === firstVideoSeg.clipId)
+        if (clip?.type !== 'image') {
+          if (!video) { setIsPlaying(false); return }
+          if (!clip?.file) { setIsPlaying(false); return }
+          if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+          const url = URL.createObjectURL(clip.file)
+          objectUrlRef.current = url
+          video.src = url
+          video.currentTime = firstVideoSeg.inPoint
+          video.volume = Math.min(1, (firstVideoSeg.volume ?? 1) * masterVolumeRef.current)
+          video.playbackRate = firstVideoSeg.speed ?? 1
+          video.muted = firstVideoSeg.muted ?? false
+        }
+        activeSegRef.current = firstVideoSeg
+        setPlayheadPosition(firstVideoSeg.startOnTimeline)
+        startSeg = firstVideoSeg
       }
-      stallCountRef.current = 0
+    }
 
-      const currentPlayhead = seg.startOnTimeline + (rawTime - seg.inPoint)
-      setPlayheadPosition(currentPlayhead)
-
-      // Sync audio: find any audio segment covering the current playhead
-      const audioSeg = segmentsRef.current.find(
-        (s) => s.trackIndex === 2 &&
-          currentPlayhead >= s.startOnTimeline &&
-          currentPlayhead < s.startOnTimeline + (s.outPoint - s.inPoint),
-      )
-      if (audioSeg && audioRef.current.paused && audioRef.current.src) {
+    if (startSeg) {
+      if (!video) { setIsPlaying(false); return }
+      const startClip = clipsRef.current.find((c) => c.id === startSeg!.clipId)
+      // Only play via video element for non-image clips
+      if (startClip?.type !== 'image') {
+        cancelPlayRef.current = playWhenReady(video, () => setIsPlaying(false), playAbortRef.current)
+      }
+      if (activeAudioSegRef.current && audioRef.current.src) {
         audioRef.current.play().catch(() => {})
-      } else if (!audioSeg && !audioRef.current.paused) {
-        audioRef.current.pause()
       }
-
-      if (rawTime >= seg.outPoint - 0.05) {
-        const nextSeg = segmentsRef.current
-          .filter((s) => s.trackIndex === 0 && s.startOnTimeline > seg.startOnTimeline)
-          .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0]
-
-        if (nextSeg) {
-          const nextClip = clipsRef.current.find((c) => c.id === nextSeg.clipId)
-          if (nextClip?.file) {
-            if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
-            objectUrlRef.current = null
-            const url = URL.createObjectURL(nextClip.file)
-            objectUrlRef.current = url
-            videoRef.current.src = url
-            videoRef.current.currentTime = nextSeg.inPoint
-            videoRef.current.volume = nextSeg.volume ?? 1
-            videoRef.current.playbackRate = nextSeg.speed ?? 1
-            videoRef.current.play().catch(() => {})
-            activeSegRef.current = nextSeg
-          } else {
-            if (objectUrlRef.current) {
-              URL.revokeObjectURL(objectUrlRef.current)
-              objectUrlRef.current = null
-            }
-            setIsPlaying(false)
-            return
-          }
-        } else {
-          setIsPlaying(false)
-          return
-        }
-      }
-
-      rafRef.current = requestAnimationFrame(tick)
+      startVideoTick({
+        videoRef,
+        audioRef,
+        segmentsRef,
+        clipsRef,
+        activeSegRef,
+        objectUrlRef,
+        stallCountRef,
+        rafRef,
+        cancelPlayRef,
+        playAbortRef,
+        masterVolumeRef,
+        transitionVideoRef,
+        transitionUrlRef,
+        transitionsRef,
+        setPlayheadPosition,
+        setIsPlaying,
+      })
     }
-
-    rafRef.current = requestAnimationFrame(tick)
 
     return () => {
+      playAbortRef.current.cancelled = true
+      cancelPlayRef.current()
+      audioOnlyCleanup()
       cancelAnimationFrame(rafRef.current)
       videoRef.current?.pause()
       audioRef.current.pause()
+      // Clean up transition B on stop
+      if (transitionUrlRef.current) { URL.revokeObjectURL(transitionUrlRef.current); transitionUrlRef.current = null }
+      if (transitionVideoRef.current) {
+        transitionVideoRef.current.pause()
+        transitionVideoRef.current.src = ''
+        transitionVideoRef.current.style.display = 'none'
+        transitionVideoRef.current.style.opacity = '0'
+        transitionVideoRef.current.style.transform = ''
+        transitionVideoRef.current.style.clipPath = ''
+      }
+      if (videoRef.current) { videoRef.current.style.opacity = '1'; videoRef.current.style.transform = ''; videoRef.current.style.clipPath = '' }
     }
   }, [isPlaying]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -290,13 +315,41 @@ export default function VideoPreview() {
           style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', background: '#000',
             filter: buildCSSFilter(activeSeg?.effects ?? []) || undefined,
+            display: isImageClip ? 'none' : undefined,
           }}
         />
+        {/* Transition overlay — second video element for dissolve/wipe/slide/zoom */}
+        <video
+          ref={transitionVideoRef}
+          muted
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'none', opacity: 0 }}
+        />
+        {/* Image clip display */}
+        {isImageClip && imgUrl && (
+          <img
+            src={imgUrl}
+            style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain',
+              filter: buildCSSFilter(activeSeg?.effects ?? []) || undefined,
+            }}
+            alt=""
+          />
+        )}
         {activeSeg?.effects && hasVignette(activeSeg.effects) && (
           <div
             style={{
               position: 'absolute', inset: 0, pointerEvents: 'none',
               background: `radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,${vignetteOpacity(activeSeg.effects)}) 100%)`,
+            }}
+          />
+        )}
+        {/* Fade transition overlay */}
+        {fadeOverlayOpacity > 0 && (
+          <div
+            style={{
+              position: 'absolute', inset: 0, pointerEvents: 'none',
+              background: '#000',
+              opacity: fadeOverlayOpacity,
             }}
           />
         )}

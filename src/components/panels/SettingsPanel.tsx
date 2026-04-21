@@ -59,6 +59,12 @@ export default function SettingsPanel() {
             onChange={(v) => updateProjectSettings({ hardwareAcceleration: v })}
           />
         </SettingRow>
+        <SettingRow label="Video Frames" sub="Show frames in timeline">
+          <Toggle
+            on={projectSettings.showClipThumbnails}
+            onChange={(v) => updateProjectSettings({ showClipThumbnails: v })}
+          />
+        </SettingRow>
       </div>
     </div>
   )

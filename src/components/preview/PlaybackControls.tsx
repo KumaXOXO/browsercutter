@@ -4,10 +4,10 @@ import { useAppStore } from '../../store/useAppStore'
 import { formatTime } from '../../lib/utils'
 
 export default function PlaybackControls() {
-  const { isPlaying, playheadPosition, segments, setIsPlaying, setPlayheadPosition, undo, redo, canUndo, canRedo } = useAppStore()
+  const { isPlaying, playheadPosition, segments, masterVolume, setIsPlaying, setPlayheadPosition, setMasterVolume, undo, redo, canUndo, canRedo } = useAppStore()
 
+  // Include ALL segments (all tracks) so audio-only timelines show correct duration
   const totalDuration = segments
-    .filter((s) => s.trackIndex === 0)
     .reduce((max, s) => Math.max(max, s.startOnTimeline + (s.outPoint - s.inPoint)), 0)
 
   const progress = totalDuration > 0 ? (playheadPosition / totalDuration) * 100 : 0
@@ -33,7 +33,17 @@ export default function PlaybackControls() {
       <span className="text-xs font-mono shrink-0" style={{ color: 'var(--muted-subtle)' }}>{formatTime(playheadPosition)}</span>
       <SeekBar progress={progress} onSeek={handleSeek} />
       <span className="text-xs font-mono shrink-0" style={{ color: 'var(--muted-subtle)' }}>{formatTime(totalDuration)}</span>
-      <IconBtn><Volume2 size={14} /></IconBtn>
+      <IconBtn title="Master Volume"><Volume2 size={14} /></IconBtn>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.01}
+        value={masterVolume}
+        onChange={(e) => setMasterVolume(Number(e.target.value))}
+        title={`Master Volume: ${Math.round(masterVolume * 100)}%`}
+        style={{ width: 60, accentColor: '#E11D48', cursor: 'pointer' }}
+      />
     </div>
   )
 }

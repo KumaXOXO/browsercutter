@@ -10,7 +10,12 @@ import { PX_PER_SEC } from './ClipBlock'
 
 const TRACK_LABEL_WIDTH = 78
 
-export default function Timeline() {
+interface Props {
+  height?: number
+  isDragging?: boolean
+}
+
+export default function Timeline({ height = 205, isDragging = false }: Props) {
   const [zoom, setZoom] = useState(1)
   const playheadPosition = useAppStore((s) => s.playheadPosition)
   const playheadLeft = TRACK_LABEL_WIDTH + playheadPosition * PX_PER_SEC * zoom
@@ -18,7 +23,7 @@ export default function Timeline() {
   return (
     <div
       className="flex flex-col shrink-0"
-      style={{ height: 205, background: 'var(--bg)', borderTop: '1px solid var(--border-subtle)' }}
+      style={{ height, background: 'var(--bg)', borderTop: '1px solid var(--border-subtle)', transition: isDragging ? 'none' : 'height 0.15s ease' }}
     >
       {/* Toolbar */}
       <div

@@ -48,7 +48,23 @@
       "Bash(git check-ignore *)",
       "Bash(git worktree *)",
       "Bash(git merge *)",
-      "Bash(git branch *)"
+      "Bash(git branch *)",
+      "Skill(plan-ceo-review)",
+      "Bash(gh pr *)",
+      "Bash(git checkout *)",
+      "Bash(~/.claude/skills/gstack/bin/gstack-config set *)",
+      "Bash(touch ~/.claude/skills/gstack/.feature-prompted-continuous-checkpoint)",
+      "Bash(cat \"Anweißungen.txt\")",
+      "Bash(cat Anwei*.txt)",
+      "Bash(~/.claude/skills/gstack/bin/gstack-review-read *)",
+      "Bash(~/.claude/skills/gstack/bin/gstack-learnings-log '{\"skill\":\"plan-eng-review\",\"type\":\"architecture\",\"key\":\"mutable-ref-for-stale-closure\",\"insight\":\"For values that change during a RAF tick \\(e.g. masterVolume\\), use a mutable ref synced on every render \\(masterVolumeRef.current = masterVolume\\). Zustand state captured at tick start goes stale. Pattern: useRef\\(value\\), then sync .current unconditionally at render time, same as segmentsRef.\",\"confidence\":9,\"source\":\"observed\",\"files\":[\"src/lib/video/playbackEngine.ts\",\"src/components/preview/VideoPreview.tsx\"]}')",
+      "Bash(~/.claude/skills/gstack/bin/gstack-learnings-log '{\"skill\":\"plan-eng-review\",\"type\":\"pitfall\",\"key\":\"css-dissolve-not-crossfade\",\"insight\":\"CSS opacity on a single video element cannot produce a true crossfade. Fade-to-black \\(single element opacity 0->1->0\\) works. True crossfade requires two simultaneous HTMLVideoElement instances with cross-animated opacity. Always check whether dissolve means fade-to-black or crossfade before scoping.\",\"confidence\":10,\"source\":\"cross-model\",\"files\":[\"src/components/preview/VideoPreview.tsx\",\"src/lib/video/playbackEngine.ts\"]}')",
+      "Bash(~/.claude/skills/gstack/bin/gstack-learnings-log '{\"skill\":\"plan-eng-review\",\"type\":\"pitfall\",\"key\":\"thumbnail-seek-chain-async\",\"insight\":\"Setting video.currentTime without awaiting the seeked event yields frame 0. Always use full async chain: set src -> wait canplay -> set currentTime -> wait seeked -> drawImage. Naive assignment is unreliable.\",\"confidence\":9,\"source\":\"observed\",\"files\":[\"src/lib/video/thumbnails.ts\"]}')",
+      "Bash(~/.claude/skills/gstack/bin/gstack-learnings-log '{\"skill\":\"plan-eng-review\",\"type\":\"architecture\",\"key\":\"image-tick-onSwitchToVideo-callback\",\"insight\":\"Image segments use wall-clock \\(performance.now\\(\\)\\) delta not video.currentTime. At image->video boundary, call onSwitchToVideo\\(nextSeg\\) directly to start startVideoTick without setIsPlaying\\(false/true\\) round-trip — avoids a React re-render gap between segments.\",\"confidence\":9,\"source\":\"observed\",\"files\":[\"src/lib/video/playbackEngine.ts\"]}')",
+      "Bash(~/.claude/skills/gstack/bin/gstack-learnings-log '{\"skill\":\"plan-eng-review\",\"type\":\"pitfall\",\"key\":\"plan-wrong-file-path\",\"insight\":\"Plan initially had wrong path src/components/playback/PlaybackControls.tsx; actual path is src/components/preview/PlaybackControls.tsx. Always verify file paths against actual codebase before reviewing plan specs.\",\"confidence\":10,\"source\":\"observed\",\"files\":[\"src/components/preview/PlaybackControls.tsx\"]}')",
+      "Bash(npx vite *)",
+      "Skill(ship)",
+      "Bash(git pull *)"
     ]
   }
 }
