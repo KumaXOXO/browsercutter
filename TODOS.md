@@ -1,16 +1,18 @@
 # TODOS
 
-## Phase 11+
+## Phase 12+
 
-### Wipe/zoom/slide transition rendering
-**What:** Implement preview rendering for `wipe`, `zoom`, and `slide` TransitionTypes in `startVideoTick`.  
-**Why:** 3 of 6 TransitionTypes are defined in `types/index.ts` and selectable in TransitionsPanel but silently render as cuts. Users who pick these see no visual feedback that the transition isn't working.  
-**Pros:** Completes the transition system — all 6 types have preview parity.  
-**Cons:** ~60 LOC per type; `wipe` and `slide` require CSS clip-path or canvas compositing; `zoom` requires scale transform synchronized to the cut. Moderate complexity per type.  
-**Context:** Phase 10 implements `fade` (fade-to-black, CSS overlay) and `dissolve` (true crossfade, two video elements). The data model (`state.transitions[]`, `Transition` type) is already correct — only the rendering is missing. Start in `src/lib/video/playbackEngine.ts` → `startVideoTick`, look at how dissolve is implemented, and follow the same boundary-detection pattern.  
-**Depends on:** Phase 10 dissolve implementation (ships the two-video-element pattern that wipe/slide may reuse).
+### Export filter_complex for dissolve/wipe/slide/zoom transitions
+**What:** Extend the Phase 8 FFmpeg export worker to render the new Phase 11 CSS transitions as actual video transitions in the output file.  
+**Why:** Phase 11 transitions only play in the preview player — the exported video still cuts. Users who set a dissolve or wipe expect to see it in the export.  
+**Pros:** Completes the export parity story for the 4 new transition types.  
+**Cons:** FFmpeg `xfade` filter has limited transition types (dissolve, wipe, slide, zoom all map cleanly); requires reworking the filter_complex chain in `exportWorker.ts` to chain xfade across segment boundaries.  
+**Context:** `src/workers/exportWorker.ts` currently builds a concat demuxer. Transitions require the xfade filter instead: `[0:v][1:v]xfade=transition=dissolve:duration=0.5:offset=<seg_end>`. Each boundary with a non-cut transition gets its own xfade node. Start by reading how Phase 8 builds filter_complex, then extend it for xfade.
 
 ---
 
-### Safari OffscreenCanvas fallback for thumbnail extraction
-**Status: DONE** (implemented in Phase 10, `thumbnails.ts:69-71`)
+### Keyboard shortcut reference panel
+**What:** An overlay (?) button in the top bar that shows a cheat-sheet of all keyboard shortcuts.  
+**Why:** Space bar, H (hide), M (mute), Delete/Backspace (remove), and future shortcuts are not discoverable — users have to find them by accident or read the source.  
+**Pros:** ~40 LOC, no new dependencies, zero impact on the critical path.  
+**Cons:** None — pure additive UI.
