@@ -39,7 +39,10 @@ export function playWhenReady(
 ): () => void {
   const tryPlay = () => {
     if (abortRef.cancelled) return
-    media.play().catch(onFail)
+    media.play().catch((err: unknown) => {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      onFail()
+    })
   }
   if (media.readyState >= 3) {
     tryPlay()

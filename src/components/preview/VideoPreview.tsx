@@ -178,6 +178,7 @@ export default function VideoPreview() {
     }
 
     playAbortRef.current = { cancelled: false }
+    stallCountRef.current = 0
     let audioOnlyCleanup = () => {}
 
     // If loop region active and playhead is outside it, jump to loop start
@@ -269,6 +270,9 @@ export default function VideoPreview() {
       const startClip = clipsRef.current.find((c) => c.id === startSeg!.clipId)
       // Only play via video element for non-image clips
       if (startClip?.type !== 'image') {
+        // Ensure currentTime is at the right position — src reset (Load URL effect) resets it to 0
+        const targetTime = startSeg!.inPoint + (playheadPosition - startSeg!.startOnTimeline) * Math.max(0.01, startSeg!.speed ?? 1)
+        if (Math.abs(video.currentTime - targetTime) > 0.05) video.currentTime = targetTime
         cancelPlayRef.current = playWhenReady(video, () => setIsPlaying(false), playAbortRef.current)
       }
       if (activeAudioSegRef.current && audioRef.current.src) {

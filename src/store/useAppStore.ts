@@ -198,7 +198,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   addSegment: (segment) => set((s) => ({ ...push(s), segments: [...s.segments, segment] })),
   removeSegment: (id) => set((s) => ({ ...push(s), segments: s.segments.filter((seg) => seg.id !== id) })),
   updateSegment: (id, patch) =>
-    set((s) => ({ ...push(s), segments: s.segments.map((seg) => seg.id === id ? { ...seg, ...patch } : seg) })),
+    set((s) => {
+      const segments = s.segments.map((seg) => seg.id === id ? { ...seg, ...patch } : seg)
+      let { playheadPosition } = s
+      if ('speed' in patch || 'outPoint' in patch || 'inPoint' in patch) {
+        const seg = segments.find((seg) => seg.id === id)
+        if (seg) {
+          const newEnd = seg.startOnTimeline + (seg.outPoint - seg.inPoint) / Math.max(0.01, seg.speed ?? 1)
+          if (playheadPosition > newEnd) playheadPosition = Math.max(seg.startOnTimeline, newEnd - 0.001)
+        }
+      }
+      return { ...push(s), segments, playheadPosition }
+    }),
   addSegments: (newSegs) => set((s) => ({ ...push(s), segments: [...s.segments, ...newSegs] })),
   replaceSegments: (newSegs) =>
     set((s) => ({ ...push(s), segments: [...s.segments.filter((seg) => seg.trackIndex !== 0), ...newSegs] })),
