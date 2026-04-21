@@ -1,5 +1,5 @@
 // src/components/panels/TransitionsPanel.tsx
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { X } from 'lucide-react'
 import { PanelLabel } from './TextPanel'
 import { useAppStore } from '../../store/useAppStore'
@@ -15,16 +15,27 @@ const TRANSITION_DEFS: { type: TransitionType; label: string; symbol: string; de
 ]
 
 export default function TransitionsPanel() {
-  const { segments, clips, transitions, addTransition, updateTransition, removeTransition } = useAppStore()
+  const { segments, clips, tracks, transitions, addTransition, updateTransition, removeTransition } = useAppStore()
   const [selected, setSelected] = useState<TransitionType | null>(null)
 
-  const v1Segments = [...segments.filter((s) => s.trackIndex === 0)]
-    .sort((a, b) => a.startOnTimeline - b.startOnTimeline)
+  const adjacentPairs = useMemo(() => {
+    const videoTrackIndices = new Set(tracks.filter((t) => t.type === 'video').map((t) => t.trackIndex))
+    const videoSegments = [...segments.filter((s) => videoTrackIndices.has(s.trackIndex))]
+      .sort((a, b) => a.startOnTimeline - b.startOnTimeline)
 
-  const adjacentPairs = v1Segments.slice(0, -1).map((seg, i) => ({
-    before: seg,
-    after: v1Segments[i + 1],
-  }))
+    const byTrack = new Map<number, typeof videoSegments>()
+    for (const s of videoSegments) {
+      if (!byTrack.has(s.trackIndex)) byTrack.set(s.trackIndex, [])
+      byTrack.get(s.trackIndex)!.push(s)
+    }
+    const pairs: { before: typeof videoSegments[0]; after: typeof videoSegments[0] }[] = []
+    for (const segs of byTrack.values()) {
+      for (let i = 0; i < segs.length - 1; i++) {
+        pairs.push({ before: segs[i], after: segs[i + 1] })
+      }
+    }
+    return pairs
+  }, [segments, tracks])
 
   function applyTransition(beforeId: string, afterId: string) {
     if (!selected) return
@@ -45,6 +56,9 @@ export default function TransitionsPanel() {
     <div className="flex flex-col gap-3 p-3.5 overflow-y-auto h-full">
       <PanelLabel>Transitions</PanelLabel>
 
+      <p className="text-xs" style={{ color: 'var(--muted-subtle)', marginTop: -4 }}>
+        Click to select, then pick a boundary below — or drag onto a clip in the timeline.
+      </p>
       <div className="grid grid-cols-2 gap-2">
         {TRANSITION_DEFS.map((t) => (
           <TransCard
@@ -54,6 +68,8 @@ export default function TransitionsPanel() {
             description={t.description}
             active={selected === t.type}
             onClick={() => setSelected(selected === t.type ? null : t.type)}
+            onDragStart={() => setSelected(t.type)}
+            transitionType={t.type}
           />
         ))}
       </div>
@@ -142,14 +158,22 @@ interface TransCardProps {
   symbol: string
   description: string
   active: boolean
+  transitionType: TransitionType
   onClick: () => void
+  onDragStart: () => void
 }
 
-function TransCard({ label, symbol, description, active, onClick }: TransCardProps) {
+function TransCard({ label, symbol, description, active, transitionType, onClick, onDragStart }: TransCardProps) {
   return (
     <button
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('transitionType', transitionType)
+        e.dataTransfer.effectAllowed = 'copy'
+        onDragStart()
+      }}
       onClick={onClick}
-      className="flex flex-col items-center rounded-lg cursor-pointer transition-all duration-150"
+      className="flex flex-col items-center rounded-lg cursor-grab transition-all duration-150"
       style={{
         padding: '12px 8px',
         background: active ? 'rgba(225,29,72,0.1)' : 'var(--surface2)',

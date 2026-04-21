@@ -1,8 +1,8 @@
 // src/components/timeline/ClipBlock.tsx
 import { useEffect, useRef, useState } from 'react'
-import { X, Eye, EyeOff, Volume2, VolumeX } from 'lucide-react'
-import type { Segment, Clip } from '../../types'
+import type { Segment, Clip, EffectType, TransitionType } from '../../types'
 import { useAppStore } from '../../store/useAppStore'
+import { EFFECT_DEFAULTS } from '../../lib/effectDefs'
 import ThumbnailLayer from './ThumbnailLayer'
 import WaveformCanvas from './WaveformCanvas'
 
@@ -27,14 +27,14 @@ const TRANSITION_SYMBOLS: Record<string, string> = {
 }
 
 export default function ClipBlock({ segment, clip, zoom }: Props) {
-  const { selectedElement, setSelectedElement, removeSegment, updateSegment, projectSettings, transitions } = useAppStore()
+  const { selectedElement, setSelectedElement, removeSegment, updateSegment, addTransition, removeTransition, projectSettings, transitions, selectedSegmentIds, setSelectedSegmentIds, toggleSegmentSelection, segments } = useAppStore()
   const showThumbnails = projectSettings.showClipThumbnails ?? false
   const transitionAfter = transitions.find((t) => t.beforeSegmentId === segment.id && t.type !== 'cut')
   const isSelected = selectedElement?.id === segment.id
+  const isMultiSelected = selectedSegmentIds.includes(segment.id)
   const px = PX_PER_SEC * zoom
   const left  = segment.startOnTimeline * px
   const width = (segment.outPoint - segment.inPoint) / Math.max(0.01, segment.speed ?? 1) * px
-  const showButtons = width >= 60
 
   const [hovered, setHovered] = useState(false)
 
@@ -70,15 +70,54 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
   // Move drag: mousedown on body
   const handleBodyMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation()
+
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl+click: toggle this clip in multi-select
+      toggleSegmentSelection(segment.id)
+      return
+    }
+
+    if (e.shiftKey) {
+      // Shift+click: range select between last selected and this clip (same track)
+      const anchorId = selectedElement?.id ?? selectedSegmentIds[selectedSegmentIds.length - 1]
+      const anchor = segments.find((s) => s.id === anchorId)
+      if (anchor && anchor.trackIndex === segment.trackIndex) {
+        const trackSegs = segments
+          .filter((s) => s.trackIndex === segment.trackIndex)
+          .sort((a, b) => a.startOnTimeline - b.startOnTimeline)
+        const aIdx = trackSegs.findIndex((s) => s.id === anchor.id)
+        const bIdx = trackSegs.findIndex((s) => s.id === segment.id)
+        const range = trackSegs.slice(Math.min(aIdx, bIdx), Math.max(aIdx, bIdx) + 1)
+        setSelectedSegmentIds(range.map((s) => s.id))
+        return
+      }
+      toggleSegmentSelection(segment.id)
+      return
+    }
+
+    // Normal click: single select and drag
+    // Capture multi-selection BEFORE clearing it so dragging a selected clip moves the whole group
+    const multiIds = selectedSegmentIds.includes(segment.id) ? selectedSegmentIds : [segment.id]
     setSelectedElement({ type: 'segment', id: segment.id })
+    setSelectedSegmentIds([])
 
     const trackContent = (e.currentTarget as HTMLElement).parentElement!
     const trackRect = trackContent.getBoundingClientRect()
     const offsetX = e.clientX - trackRect.left - left
+    const startPositions = Object.fromEntries(
+      segments.filter((s) => multiIds.includes(s.id)).map((s) => [s.id, s.startOnTimeline])
+    )
 
     const handleMouseMove = (ev: MouseEvent) => {
       const newStart = Math.max(0, (ev.clientX - trackRect.left - offsetX) / px)
-      updateSegment(segment.id, { startOnTimeline: newStart })
+      const primaryDelta = newStart - (startPositions[segment.id] ?? segment.startOnTimeline)
+      if (multiIds.length > 1) {
+        multiIds.forEach((id) => {
+          updateSegment(id, { startOnTimeline: Math.max(0, (startPositions[id] ?? 0) + primaryDelta) })
+        })
+      } else {
+        updateSegment(segment.id, { startOnTimeline: newStart })
+      }
     }
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove)
@@ -129,9 +168,56 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
     document.addEventListener('mouseup', handleMouseUp)
   }
 
+  const handleDragOver = (e: React.DragEvent) => {
+    const hasEffect = e.dataTransfer.types.includes('effecttype')
+    const hasTransition = e.dataTransfer.types.includes('transitiontype')
+    if (hasEffect || hasTransition) {
+      e.preventDefault()
+      e.stopPropagation()
+      e.dataTransfer.dropEffect = 'copy'
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    const effectType = e.dataTransfer.getData('effectType') as EffectType | ''
+    if (effectType) {
+      e.preventDefault()
+      e.stopPropagation()
+      const existing = segment.effects ?? []
+      if (!existing.find((ef) => ef.type === effectType)) {
+        updateSegment(segment.id, { effects: [...existing, { type: effectType, value: EFFECT_DEFAULTS[effectType] }] })
+      }
+      // Select the segment and switch to effects tab so the RightPanel stays visible
+      useAppStore.setState({ selectedElement: { type: 'segment', id: segment.id }, activeTab: 'effects', selectedSegmentIds: [] })
+      return
+    }
+
+    const transitionType = e.dataTransfer.getData('transitionType') as TransitionType | ''
+    if (transitionType) {
+      e.preventDefault()
+      e.stopPropagation()
+      const trackSegs = [...segments.filter((s) => s.trackIndex === segment.trackIndex)]
+        .sort((a, b) => a.startOnTimeline - b.startOnTimeline)
+      const idx = trackSegs.findIndex((s) => s.id === segment.id)
+      const nextSeg = trackSegs[idx + 1]
+      if (!nextSeg) return
+      const existing = transitions.find((t) => t.beforeSegmentId === segment.id && t.afterSegmentId === nextSeg.id)
+      if (existing) removeTransition(existing.id)
+      addTransition({
+        id: crypto.randomUUID(),
+        type: transitionType,
+        beforeSegmentId: segment.id,
+        afterSegmentId: nextSeg.id,
+        duration: 0.5,
+      })
+    }
+  }
+
   return (
     <div
       onMouseDown={handleBodyMouseDown}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -144,7 +230,7 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
         display: 'flex',
         alignItems: 'center',
         overflow: 'hidden',
-        outline: isSelected ? '2px solid rgba(255,255,255,0.9)' : 'none',
+        outline: isSelected ? '2px solid rgba(255,255,255,0.9)' : isMultiSelected ? '2px solid rgba(100,180,255,0.8)' : 'none',
         outlineOffset: 1,
         opacity: segment.hidden ? 0.4 : 1,
         filter: hovered && !isSelected ? 'brightness(1.2)' : undefined,
@@ -186,46 +272,6 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
         }}>
           M
         </span>
-      )}
-
-      {/* Hover toolbar — bottom strip */}
-      {hovered && (
-        <div
-          style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            display: 'flex', justifyContent: 'center', gap: 2,
-            padding: '2px 4px',
-            background: 'rgba(0,0,0,0.55)',
-            zIndex: 10,
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <button
-            title="Remove (Delete)"
-            onClick={(e) => { e.stopPropagation(); setSelectedElement(null); removeSegment(segment.id) }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'rgba(255,100,100,0.9)', lineHeight: 1 }}
-          >
-            <X size={10} />
-          </button>
-          {showButtons && (
-            <>
-              <button
-                title={segment.hidden ? 'Show (H)' : 'Hide (H)'}
-                onClick={(e) => { e.stopPropagation(); updateSegment(segment.id, { hidden: !segment.hidden }) }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'rgba(255,255,255,0.75)', lineHeight: 1 }}
-              >
-                {segment.hidden ? <EyeOff size={10} /> : <Eye size={10} />}
-              </button>
-              <button
-                title={segment.muted ? 'Unmute (M)' : 'Mute (M)'}
-                onClick={(e) => { e.stopPropagation(); updateSegment(segment.id, { muted: !segment.muted }) }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'rgba(255,255,255,0.75)', lineHeight: 1 }}
-              >
-                {segment.muted ? <VolumeX size={10} /> : <Volume2 size={10} />}
-              </button>
-            </>
-          )}
-        </div>
       )}
 
       {/* Transition badge — bottom-right corner when transition is applied after this segment */}

@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import type {
   Clip, ClipId, Segment, SegmentId, AdjustmentLayer,
   Transition, TextOverlay, BpmConfig, ProjectSettings,
-  ActiveTab, MediaSubTab, SelectedElement,
+  ActiveTab, MediaSubTab, SelectedElement, TimelineTrack,
 } from '../types'
 
 interface TimelineSnapshot {
@@ -18,6 +18,7 @@ interface AppState {
   activeTab: ActiveTab
   mediaSubTab: MediaSubTab
   selectedElement: SelectedElement | null
+  selectedSegmentIds: string[]  // multi-select
 
   // ─── Project ───
   projectName: string
@@ -25,6 +26,9 @@ interface AppState {
 
   // ─── Media library ───
   clips: Clip[]
+
+  // ─── Tracks ───
+  tracks: TimelineTrack[]
 
   // ─── Timeline ───
   segments: Segment[]
@@ -34,10 +38,14 @@ interface AppState {
   playheadPosition: number  // seconds
   isPlaying: boolean
   masterVolume: number
+  loopRegion: { start: number; end: number } | null
 
   // ─── Undo / Redo ───
   _history: TimelineSnapshot[]
   _future: TimelineSnapshot[]
+
+  // ─── Fonts ───
+  availableFonts: string[]
 
   // ─── BPM tool ───
   bpmConfig: BpmConfig
@@ -46,8 +54,15 @@ interface AppState {
   setActiveTab: (tab: ActiveTab) => void
   setMediaSubTab: (tab: MediaSubTab) => void
   setSelectedElement: (el: SelectedElement | null) => void
+  setSelectedSegmentIds: (ids: string[]) => void
+  toggleSegmentSelection: (id: string) => void
   setProjectName: (name: string) => void
   updateProjectSettings: (settings: Partial<ProjectSettings>) => void
+
+  addTrack: (track: TimelineTrack) => void
+  updateTrack: (id: string, patch: Partial<TimelineTrack>) => void
+  removeTrack: (id: string) => void
+  moveTrack: (id: string, direction: 'up' | 'down') => void
 
   addClip: (clip: Clip) => void
   removeClip: (id: ClipId) => void
@@ -70,10 +85,12 @@ interface AppState {
   updateTransition: (id: string, patch: Partial<Transition>) => void
   removeTransition: (id: string) => void
 
+  addFont: (name: string) => void
   updateBpmConfig: (patch: Partial<BpmConfig>) => void
   setPlayheadPosition: (pos: number) => void
   setIsPlaying: (playing: boolean) => void
   setMasterVolume: (volume: number) => void
+  setLoopRegion: (region: { start: number; end: number } | null) => void
   loadProject: (data: Record<string, unknown>) => void
 
   undo: () => void
@@ -95,6 +112,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeTab: 'media',
   mediaSubTab: 'videos',
   selectedElement: null,
+  selectedSegmentIds: [],
 
   // ─── Project ───
   projectName: 'Untitled Project',
@@ -112,6 +130,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ─── Media library ───
   clips: [],
 
+  // ─── Tracks ───
+  tracks: [
+    { id: 'v1', name: 'V1', type: 'video', trackIndex: 0 },
+    { id: 'text', name: 'Text', type: 'subtitle', trackIndex: 1 },
+    { id: 'adj', name: 'Adjustment', type: 'adjustment', trackIndex: -1 },
+    { id: 'audio', name: 'Audio', type: 'audio', trackIndex: 2 },
+  ] as TimelineTrack[],
+
   // ─── Timeline ───
   segments: [],
   adjustmentLayers: [],
@@ -120,10 +146,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   playheadPosition: 0,
   isPlaying: false,
   masterVolume: 1,
+  loopRegion: null,
 
   // ─── Undo / Redo ───
   _history: [],
   _future: [],
+
+  // ─── Fonts ───
+  availableFonts: ['Inter', 'Arial', 'Helvetica', 'Georgia', 'Courier New', 'Impact', 'Verdana', 'Trebuchet MS'],
 
   // ─── BPM tool ───
   bpmConfig: {
@@ -138,10 +168,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ─── Actions ───
   setActiveTab: (tab) => set({ activeTab: tab }),
   setMediaSubTab: (tab) => set({ mediaSubTab: tab }),
-  setSelectedElement: (el) => set({ selectedElement: el, activeTab: el ? 'inspector' : 'media' }),
+  setSelectedElement: (el) => set({ selectedElement: el, activeTab: el ? 'inspector' : 'media', selectedSegmentIds: [] }),
+  setSelectedSegmentIds: (ids) => set({ selectedSegmentIds: ids }),
+  toggleSegmentSelection: (id) => set((s) => ({
+    selectedSegmentIds: s.selectedSegmentIds.includes(id)
+      ? s.selectedSegmentIds.filter((x) => x !== id)
+      : [...s.selectedSegmentIds, id],
+  })),
   setProjectName: (name) => set({ projectName: name }),
   updateProjectSettings: (patch) =>
     set((s) => ({ projectSettings: { ...s.projectSettings, ...patch } })),
+
+  addTrack: (track) => set((s) => ({ tracks: [...s.tracks, track] })),
+  updateTrack: (id, patch) => set((s) => ({ tracks: s.tracks.map((t) => t.id === id ? { ...t, ...patch } : t) })),
+  removeTrack: (id) => set((s) => ({ tracks: s.tracks.filter((t) => t.id !== id) })),
+  moveTrack: (id, direction) => set((s) => {
+    const idx = s.tracks.findIndex((t) => t.id === id)
+    if (idx < 0) return s
+    const next = direction === 'up' ? idx - 1 : idx + 1
+    if (next < 0 || next >= s.tracks.length) return s
+    const arr = [...s.tracks]
+    ;[arr[idx], arr[next]] = [arr[next], arr[idx]]
+    return { tracks: arr }
+  }),
 
   addClip: (clip) => set((s) => ({ clips: [...s.clips, clip] })),
   removeClip: (id) => set((s) => ({ clips: s.clips.filter((c) => c.id !== id) })),
@@ -169,11 +218,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ transitions: s.transitions.map((t) => t.id === id ? { ...t, ...patch } : t) })),
   removeTransition: (id) => set((s) => ({ transitions: s.transitions.filter((t) => t.id !== id) })),
 
+  addFont: (name) => set((s) => ({
+    availableFonts: s.availableFonts.includes(name) ? s.availableFonts : [...s.availableFonts, name],
+  })),
   updateBpmConfig: (patch) =>
     set((s) => ({ bpmConfig: { ...s.bpmConfig, ...patch } })),
   setPlayheadPosition: (pos) => set({ playheadPosition: pos }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setMasterVolume: (volume) => set({ masterVolume: volume }),
+  setLoopRegion: (region) => set({ loopRegion: region }),
 
   loadProject: (data) => {
     const existing = get()
@@ -189,10 +242,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       bpmConfig: (data.bpmConfig as BpmConfig | undefined) ?? existing.bpmConfig,
       transitions: (data.transitions as Transition[] | undefined) ?? [],
       adjustmentLayers: (data.adjustmentLayers as AdjustmentLayer[] | undefined) ?? [],
+      tracks: (data.tracks as TimelineTrack[] | undefined) ?? existing.tracks,
       clips,
       isPlaying: false,
       playheadPosition: 0,
       selectedElement: null,
+      selectedSegmentIds: [],
       _history: [],
       _future: [],
     })

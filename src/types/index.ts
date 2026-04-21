@@ -10,8 +10,8 @@ export type ActiveTab = 'media' | 'text' | 'effects' | 'transitions' | 'bpm' | '
 export type MediaSubTab = 'videos' | 'music' | 'images'
 export type EffectType = 'brightness' | 'contrast' | 'saturation' | 'grayscale' | 'blur' | 'vignette' | 'sharpen'
 export type TransitionType = 'cut' | 'fade' | 'wipe' | 'zoom' | 'slide' | 'dissolve'
-export type Resolution = '1920x1080' | '3840x2160' | '1280x720'
-export type FrameRate = 24 | 30 | 60
+export type Resolution = '1920x1080' | '3840x2160' | '2560x1440' | '1280x720' | '1080x1920' | 'custom'
+export type FrameRate = 24 | 30 | 60 | 120 | 0
 export type ExportFormat = 'mp4' | 'webm'
 
 export interface Clip {
@@ -81,6 +81,15 @@ export interface BpmConfig {
   selectedClipIds: ClipId[]
 }
 
+export interface TimelineTrack {
+  id: string
+  name: string
+  type: 'video' | 'audio' | 'adjustment' | 'subtitle'
+  trackIndex: number
+  hidden?: boolean
+  muted?: boolean
+}
+
 export interface ProjectSettings {
   resolution: Resolution
   fps: FrameRate
@@ -90,6 +99,10 @@ export interface ProjectSettings {
   snapToBeat: boolean
   hardwareAcceleration: boolean
   showClipThumbnails: boolean
+  customWidth?: number
+  customHeight?: number
+  customFps?: number
+  fullWidthTimeline?: boolean
 }
 
 export type SelectedElementType = 'segment' | 'adjustment' | 'text' | 'transition' | null

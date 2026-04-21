@@ -15,11 +15,39 @@ export default function SettingsPanel() {
             value={projectSettings.resolution}
             onChange={(e) => updateProjectSettings({ resolution: e.target.value as typeof projectSettings.resolution })}
           >
-            <option value="1920x1080">1920×1080</option>
-            <option value="3840x2160">3840×2160</option>
-            <option value="1280x720">1280×720</option>
+            <option value="1280x720">1280×720 (HD)</option>
+            <option value="1920x1080">1920×1080 (Full HD)</option>
+            <option value="2560x1440">2560×1440 (QHD)</option>
+            <option value="3840x2160">3840×2160 (4K)</option>
+            <option value="1080x1920">1080×1920 (Vertical)</option>
+            <option value="custom">Custom</option>
           </select>
         </SettingRow>
+        {projectSettings.resolution === 'custom' && (
+          <div className="flex gap-2 py-2 pl-0">
+            <input
+              type="number"
+              min={1}
+              max={7680}
+              className="inp"
+              placeholder="Width"
+              value={projectSettings.customWidth ?? 1920}
+              onChange={(e) => updateProjectSettings({ customWidth: Number(e.target.value) })}
+              style={{ textAlign: 'center' }}
+            />
+            <span className="flex items-center text-xs" style={{ color: 'var(--muted-subtle)' }}>×</span>
+            <input
+              type="number"
+              min={1}
+              max={4320}
+              className="inp"
+              placeholder="Height"
+              value={projectSettings.customHeight ?? 1080}
+              onChange={(e) => updateProjectSettings({ customHeight: Number(e.target.value) })}
+              style={{ textAlign: 'center' }}
+            />
+          </div>
+        )}
         <SettingRow label="Frame Rate" sub="FPS">
           <select
             className="inp"
@@ -29,8 +57,24 @@ export default function SettingsPanel() {
             <option value={24}>24 fps</option>
             <option value={30}>30 fps</option>
             <option value={60}>60 fps</option>
+            <option value={120}>120 fps</option>
+            <option value={0}>Custom</option>
           </select>
         </SettingRow>
+        {projectSettings.fps === 0 && (
+          <div className="py-2">
+            <input
+              type="number"
+              min={1}
+              max={240}
+              className="inp"
+              placeholder="FPS (e.g. 25)"
+              value={projectSettings.customFps ?? 30}
+              onChange={(e) => updateProjectSettings({ customFps: Number(e.target.value) })}
+              style={{ textAlign: 'center' }}
+            />
+          </div>
+        )}
         <SettingRow label="Format" sub="Export format">
           <select
             className="inp"
@@ -63,6 +107,12 @@ export default function SettingsPanel() {
           <Toggle
             on={projectSettings.showClipThumbnails}
             onChange={(v) => updateProjectSettings({ showClipThumbnails: v })}
+          />
+        </SettingRow>
+        <SettingRow label="Full-Width Timeline" sub="Timeline spans full width">
+          <Toggle
+            on={projectSettings.fullWidthTimeline ?? true}
+            onChange={(v) => updateProjectSettings({ fullWidthTimeline: v })}
           />
         </SettingRow>
       </div>

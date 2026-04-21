@@ -2,6 +2,7 @@
 import { useState, useRef, useCallback } from 'react'
 import type { WorkerMessage } from './exportWorker'
 import { useAppStore } from '../../store/useAppStore'
+import { writeExportFile } from '../saveManager'
 
 export type ExportStatus = 'idle' | 'running' | 'done' | 'error'
 
@@ -30,10 +31,11 @@ export function useExport(): ExportState {
   }, [])
 
   const startExport = useCallback(async () => {
-    const { segments, clips, projectSettings, transitions, adjustmentLayers } = useAppStore.getState()
+    const { segments, clips, projectSettings, transitions, adjustmentLayers, tracks } = useAppStore.getState()
 
-    const v1Segs = segments.filter((s) => s.trackIndex === 0)
-    if (v1Segs.length === 0) {
+    const videoTrackIndices = new Set(tracks.filter((t) => t.type === 'video').map((t) => t.trackIndex))
+    const videoSegs = segments.filter((s) => videoTrackIndices.has(s.trackIndex))
+    if (videoSegs.length === 0) {
       setErrorMsg('Add at least one clip to the timeline before exporting.')
       setStatus('error')
       return
@@ -45,7 +47,7 @@ export function useExport(): ExportState {
     setErrorMsg('')
 
     const clipData: Record<string, { buffer: ArrayBuffer; name: string }> = {}
-    const needed = new Set(v1Segs.map((s) => s.clipId))
+    const needed = new Set(videoSegs.map((s) => s.clipId))
 
     for (const clip of clips) {
       if (!needed.has(clip.id)) continue
@@ -70,8 +72,11 @@ export function useExport(): ExportState {
         setLabel('Done!')
         setStatus('done')
         const ext = projectSettings.format === 'webm' ? 'webm' : 'mp4'
-        downloadBuffer(msg.buffer, `browsercutter-export.${ext}`)
-        workerRef.current = null
+        const filename = `browsercutter-export.${ext}`
+        writeExportFile(msg.buffer, filename)
+          .then((saved) => { if (!saved) downloadBuffer(msg.buffer, filename) })
+          .catch(() => downloadBuffer(msg.buffer, filename))
+          .finally(() => { workerRef.current = null })
       } else if (msg.type === 'error') {
         setErrorMsg(msg.message)
         setStatus('error')
@@ -87,12 +92,17 @@ export function useExport(): ExportState {
 
     const transferBuffers = Object.values(clipData).map((c) => c.buffer)
 
+    const resolution = projectSettings.resolution === 'custom'
+      ? `${projectSettings.customWidth ?? 1920}x${projectSettings.customHeight ?? 1080}`
+      : projectSettings.resolution
+    const fps = projectSettings.fps === 0 ? (projectSettings.customFps ?? 30) : projectSettings.fps
+
     worker.postMessage(
       {
-        segments: v1Segs,
+        segments: videoSegs,
         clipData,
-        fps: projectSettings.fps,
-        resolution: projectSettings.resolution,
+        fps,
+        resolution,
         transitions,
         adjustmentLayers,
         format: projectSettings.format,

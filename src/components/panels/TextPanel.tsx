@@ -1,11 +1,12 @@
 // src/components/panels/TextPanel.tsx
-import { Type, FileText } from 'lucide-react'
+import { Type, FileText, Type as FontIcon } from 'lucide-react'
 import { v4 as uuidv4 } from 'uuid'
 import { useAppStore } from '../../store/useAppStore'
 import { parseSrt } from '../../lib/srt/parseSrt'
+import { loadCustomFont } from '../../lib/fontManager'
 
 export default function TextPanel() {
-  const { addTextOverlay, setSelectedElement, playheadPosition } = useAppStore()
+  const { addTextOverlay, setSelectedElement, playheadPosition, addFont } = useAppStore()
 
   function handleAddText() {
     const id = uuidv4()
@@ -21,6 +22,19 @@ export default function TextPanel() {
       y: 0.85,
     })
     setSelectedElement({ type: 'text', id })
+  }
+
+  async function handleUploadFont() {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.ttf,.otf,.woff,.woff2'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      const result = await loadCustomFont(file, addFont)
+      if (!result.ok) alert(`Font load failed: ${result.error}`)
+    }
+    input.click()
   }
 
   async function handleImportSrt() {
@@ -42,6 +56,7 @@ export default function TextPanel() {
       <PanelLabel>Text &amp; Subtitles</PanelLabel>
       <GhostAction icon={<Type size={13} />} label="Add Text Overlay" onClick={handleAddText} />
       <GhostAction icon={<FileText size={13} />} label="Import .srt File" onClick={handleImportSrt} />
+      <GhostAction icon={<FontIcon size={13} />} label="Upload Custom Font" onClick={handleUploadFont} />
       <p className="text-xs" style={{ color: 'var(--muted-subtle)' }}>No text or subtitles added yet.</p>
     </div>
   )

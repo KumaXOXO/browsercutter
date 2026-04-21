@@ -4,15 +4,7 @@ import { Undo2, Redo2, Save, FolderOpen, HelpCircle } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import ExportModal from '../export/ExportModal'
 import ShortcutsModal from './ShortcutsModal'
-
-const SAVE_KEY = 'browsercutter_project'
-
-function saveProject() {
-  const { projectName, projectSettings, segments, textOverlays, bpmConfig, transitions, adjustmentLayers, clips } = useAppStore.getState()
-  const serializedClips = clips.map(({ file: _f, ...meta }) => meta)
-  const data = { projectName, projectSettings, segments, textOverlays, bpmConfig, transitions, adjustmentLayers, clips: serializedClips, savedAt: Date.now() }
-  localStorage.setItem(SAVE_KEY, JSON.stringify(data))
-}
+import { saveProjectFile, hasSaveDir, getSaveDirName } from '../../lib/saveManager'
 
 export function validateProjectJSON(json: unknown): { valid: true; data: Record<string, unknown> } | { valid: false; error: string } {
   if (typeof json !== 'object' || json === null || Array.isArray(json)) {
@@ -28,6 +20,8 @@ export function validateProjectJSON(json: unknown): { valid: true; data: Record<
 export default function TopBar() {
   const { projectName, setProjectName, undo, redo, canUndo, canRedo, loadProject } = useAppStore()
   const [saved, setSaved] = useState(false)
+  const [savedOnce, setSavedOnce] = useState(hasSaveDir())
+  const [saveDirName, setSaveDirName] = useState<string | null>(getSaveDirName())
   const [showExport, setShowExport] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -41,10 +35,16 @@ export default function TopBar() {
     requestAnimationFrame(() => helpBtnRef.current?.focus())
   }, [])
 
-  function handleSave() {
-    saveProject()
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1800)
+  async function handleSave() {
+    const result = await saveProjectFile()
+    if (result.ok) {
+      setSavedOnce(true)
+      setSaveDirName(getSaveDirName())
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1800)
+    } else if (result.reason !== 'cancelled') {
+      alert(`Save failed: ${result.reason}`)
+    }
   }
 
   function handleLoadClick() {
@@ -93,6 +93,36 @@ export default function TopBar() {
         if (e.key === 's') { e.preventDefault(); handleSave() }
         if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
         if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); redo() }
+        if (e.key === 'c' && !isText) {
+          e.preventDefault()
+          const state = useAppStore.getState()
+          const ids = state.selectedSegmentIds.length > 0
+            ? state.selectedSegmentIds
+            : state.selectedElement?.type === 'segment' ? [state.selectedElement.id] : []
+          if (ids.length > 0) {
+            const copied = state.segments.filter((s) => ids.includes(s.id))
+            ;(window as Record<string, unknown>).__clipboardSegments = copied
+          }
+        }
+        if (e.key === 'v' && !isText) {
+          e.preventDefault()
+          const w = window as Record<string, unknown>
+          const copied = w.__clipboardSegments
+          if (Array.isArray(copied) && copied.length > 0) {
+            const { addSegments, segments } = useAppStore.getState()
+            const timelineEnd = segments.length > 0
+              ? Math.max(...segments.map((s) => s.startOnTimeline + (s.outPoint - s.inPoint) / Math.max(0.01, s.speed ?? 1)))
+              : 0
+            const copyStart = Math.min(...copied.map((s: { startOnTimeline: number }) => s.startOnTimeline))
+            const offset = timelineEnd - copyStart + 0.1
+            const pasted = copied.map((s: Record<string, unknown>) => ({
+              ...s,
+              id: crypto.randomUUID(),
+              startOnTimeline: (s.startOnTimeline as number) + offset,
+            }))
+            addSegments(pasted)
+          }
+        }
       }
     }
     window.addEventListener('keydown', onKey)
@@ -139,9 +169,13 @@ export default function TopBar() {
         </GhostBtn>
         <GhostBtn onClick={handleSave}>
           <Save size={13} />
-          {saved ? 'Saved!' : 'Save'}
+          {saved ? 'Saved!' : saveDirName ? `Save (${saveDirName})` : 'Save'}
         </GhostBtn>
-        <PrimaryBtn onClick={() => setShowExport(true)}>
+        <PrimaryBtn
+          onClick={() => setShowExport(true)}
+          disabled={!savedOnce}
+          title={!savedOnce ? 'Save your project first before exporting' : undefined}
+        >
           Export Video
         </PrimaryBtn>
       </div>
@@ -204,16 +238,18 @@ function GhostBtn({ children, onClick }: { children: React.ReactNode; onClick?: 
   )
 }
 
-function PrimaryBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+function PrimaryBtn({ children, onClick, disabled, title }: { children: React.ReactNode; onClick?: () => void; disabled?: boolean; title?: string }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-lg text-sm font-semibold text-white cursor-pointer transition-all duration-200"
-      style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#E11D48,#C41232)', border: 'none', boxShadow: '0 4px 14px rgba(225,29,72,0.35)' }}
-      onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 22px rgba(225,29,72,0.5)' }}
+      disabled={disabled}
+      title={title}
+      className="rounded-lg text-sm font-semibold text-white transition-all duration-200"
+      style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#E11D48,#C41232)', border: 'none', boxShadow: '0 4px 14px rgba(225,29,72,0.35)', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}
+      onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 22px rgba(225,29,72,0.5)' } }}
       onMouseLeave={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 4px 14px rgba(225,29,72,0.35)' }}
-      onMouseDown={(e)  => { e.currentTarget.style.transform = 'scale(0.97)' }}
-      onMouseUp={(e)    => { e.currentTarget.style.transform = 'translateY(-1px)' }}
+      onMouseDown={(e)  => { if (!disabled) e.currentTarget.style.transform = 'scale(0.97)' }}
+      onMouseUp={(e)    => { if (!disabled) e.currentTarget.style.transform = 'translateY(-1px)' }}
     >
       {children}
     </button>

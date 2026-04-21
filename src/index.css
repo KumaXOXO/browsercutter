@@ -70,5 +70,7 @@ body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color
   width: 100%;
   transition: border-color 180ms, box-shadow 180ms;
   cursor: pointer;
+  color-scheme: dark;
 }
 .inp:focus { border-color: rgba(225,29,72,0.5); box-shadow: 0 0 0 3px rgba(225,29,72,0.1); }
+.inp option { background: #1C1C34; color: #EEEEF8; }

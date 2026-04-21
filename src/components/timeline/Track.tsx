@@ -4,6 +4,7 @@ import ClipBlock, { PX_PER_SEC } from './ClipBlock'
 
 interface Props {
   trackIndex: number
+  trackType: 'video' | 'audio'
   label: string
   icon: React.ReactNode
   height: number
@@ -11,9 +12,17 @@ interface Props {
   trackLabelWidth: number
 }
 
-export default function Track({ trackIndex, label, icon, height, zoom, trackLabelWidth }: Props) {
+export default function Track({ trackIndex, trackType, label, icon, height, zoom, trackLabelWidth }: Props) {
   const { segments, clips, addSegment } = useAppStore()
   const trackSegments = segments.filter((s) => s.trackIndex === trackIndex)
+
+  const totalWidth = Math.max(
+    700,
+    trackSegments.reduce((max, s) =>
+      Math.max(max, (s.startOnTimeline + (s.outPoint - s.inPoint) / Math.max(0.01, s.speed ?? 1)) * PX_PER_SEC * zoom),
+      0,
+    ) + 300,
+  )
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -27,10 +36,9 @@ export default function Track({ trackIndex, label, icon, height, zoom, trackLabe
     const clip = clips.find((c) => c.id === clipId)
     if (!clip) return
 
-    // Enforce track type: video/image → V1 (trackIndex 0), audio → Audio (trackIndex 2)
-    if (clip.type === 'video' && trackIndex !== 0) return
-    if (clip.type === 'image' && trackIndex !== 0) return
-    if (clip.type === 'audio' && trackIndex !== 2) return
+    // Enforce track type: video/image clips go on video tracks, audio clips on audio tracks
+    if ((clip.type === 'video' || clip.type === 'image') && trackType !== 'video') return
+    if (clip.type === 'audio' && trackType !== 'audio') return
 
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left
@@ -59,7 +67,7 @@ export default function Track({ trackIndex, label, icon, height, zoom, trackLabe
       </div>
       <div
         className="relative h-full"
-        style={{ width: 700 }}
+        style={{ width: totalWidth }}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >

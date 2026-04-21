@@ -20,7 +20,14 @@
 //                              │ no next seg                         │
 //                              └─────────────── setIsPlaying(false) ─┘
 
-import type { Segment, Clip, Transition, TransitionType } from '../../types'
+import type { Segment, Clip, Transition, TransitionType, TimelineTrack } from '../../types'
+
+function videoIndices(tracks: TimelineTrack[]): Set<number> {
+  return new Set(tracks.filter((t) => t.type === 'video' && !t.hidden).map((t) => t.trackIndex))
+}
+function audioIndices(tracks: TimelineTrack[]): Set<number> {
+  return new Set(tracks.filter((t) => t.type === 'audio' && !t.muted).map((t) => t.trackIndex))
+}
 import { applyTransitionStyles } from './transitionStyles'
 
 // playWhenReady — calls media.play() once the element is buffered enough.
@@ -39,12 +46,14 @@ export function playWhenReady(
     return () => {}
   }
   let onReady: (() => void) | null = null
+  const onError = () => { if (!abortRef.cancelled) onFail() }
+  media.addEventListener('error', onError, { once: true })
   const schedule = (event: 'canplaythrough' | 'canplay') => {
     if (onReady) {
       media.removeEventListener('canplaythrough', onReady)
       media.removeEventListener('canplay', onReady)
     }
-    onReady = () => { onReady = null; tryPlay() }
+    onReady = () => { media.removeEventListener('error', onError); onReady = null; tryPlay() }
     media.addEventListener(event, onReady, { once: true })
   }
   schedule('canplaythrough')
@@ -56,6 +65,7 @@ export function playWhenReady(
       media.removeEventListener('canplay', onReady)
       onReady = null
     }
+    media.removeEventListener('error', onError)
   }
 }
 
@@ -64,6 +74,7 @@ export interface VideoTickParams {
   audioRef: { current: HTMLAudioElement }
   segmentsRef: { current: Segment[] }
   clipsRef: { current: Clip[] }
+  tracksRef: { current: TimelineTrack[] }
   activeSegRef: { current: Segment | null }
   objectUrlRef: { current: string | null }
   stallCountRef: { current: number }
@@ -75,6 +86,7 @@ export interface VideoTickParams {
   transitionVideoRef: { current: HTMLVideoElement | null }
   transitionUrlRef: { current: string | null }
   transitionsRef: { current: Transition[] }
+  loopRegionRef: { current: { start: number; end: number } | null }
   setPlayheadPosition: (pos: number) => void
   setIsPlaying: (playing: boolean) => void
 }
@@ -86,9 +98,10 @@ const OVERLAY_TRANSITIONS: TransitionType[] = ['dissolve', 'wipe', 'slide', 'zoo
 // Mutually exclusive with startAudioOnlyTick — never run both simultaneously.
 export function startVideoTick(params: VideoTickParams): void {
   const {
-    videoRef, audioRef, segmentsRef, clipsRef, activeSegRef,
+    videoRef, audioRef, segmentsRef, clipsRef, tracksRef, activeSegRef,
     objectUrlRef, stallCountRef, rafRef, cancelPlayRef, playAbortRef,
     masterVolumeRef, transitionVideoRef, transitionUrlRef, transitionsRef,
+    loopRegionRef,
     setPlayheadPosition, setIsPlaying,
   } = params
 
@@ -97,6 +110,8 @@ export function startVideoTick(params: VideoTickParams): void {
     if (!seg || !videoRef.current) return
 
     const rawTime = videoRef.current.currentTime
+    const vIdx = videoIndices(tracksRef.current)
+    const aIdx = audioIndices(tracksRef.current)
     if (rawTime < seg.inPoint) {
       stallCountRef.current += 1
       if (stallCountRef.current > 60) {
@@ -112,9 +127,42 @@ export function startVideoTick(params: VideoTickParams): void {
     const currentPlayhead = seg.startOnTimeline + (rawTime - seg.inPoint) / Math.max(0.01, seg.speed ?? 1)
     setPlayheadPosition(currentPlayhead)
 
+    // Loop region: when playhead passes the end, seek back to start
+    const loop = loopRegionRef.current
+    if (loop && currentPlayhead >= loop.end) {
+      const loopStartSeg = segmentsRef.current
+        .filter((s) => vIdx.has(s.trackIndex) && !s.hidden &&
+          loop.start >= s.startOnTimeline &&
+          loop.start < s.startOnTimeline + (s.outPoint - s.inPoint) / Math.max(0.01, s.speed ?? 1))
+        .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0] ?? null
+
+      if (loopStartSeg) {
+        const loopClip = clipsRef.current.find((c) => c.id === loopStartSeg.clipId)
+        if (loopClip?.file && videoRef.current) {
+          cancelPlayRef.current()
+          if (loopStartSeg.id !== seg.id) {
+            if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+            const url = URL.createObjectURL(loopClip.file)
+            objectUrlRef.current = url
+            videoRef.current.src = url
+          }
+          const seekTime = loopStartSeg.inPoint + (loop.start - loopStartSeg.startOnTimeline) * Math.max(0.01, loopStartSeg.speed ?? 1)
+          videoRef.current.currentTime = seekTime
+          videoRef.current.volume = (loopStartSeg.volume ?? 1) * masterVolumeRef.current
+          videoRef.current.playbackRate = loopStartSeg.speed ?? 1
+          videoRef.current.muted = loopStartSeg.muted ?? false
+          playAbortRef.current = { cancelled: false }
+          cancelPlayRef.current = playWhenReady(videoRef.current, () => setIsPlaying(false), playAbortRef.current)
+          activeSegRef.current = loopStartSeg
+          rafRef.current = requestAnimationFrame(tick)
+          return
+        }
+      }
+    }
+
     // Sync audio track: find any audio segment at current playhead (skip muted)
     const audioSeg = segmentsRef.current.find(
-      (s) => s.trackIndex === 2 && !s.muted &&
+      (s) => aIdx.has(s.trackIndex) && !s.muted &&
         currentPlayhead >= s.startOnTimeline &&
         currentPlayhead < s.startOnTimeline + (s.outPoint - s.inPoint),
     )
@@ -126,7 +174,7 @@ export function startVideoTick(params: VideoTickParams): void {
 
     // Resolve next video segment (shared by both transition preload and segment swap)
     const nextSeg = segmentsRef.current
-      .filter((s) => s.trackIndex === 0 && !s.hidden && s.startOnTimeline > seg.startOnTimeline)
+      .filter((s) => vIdx.has(s.trackIndex) && !s.hidden && s.startOnTimeline > seg.startOnTimeline)
       .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0]
 
     // Transition preload: for dissolve/wipe/slide/zoom, load B early and animate
@@ -225,6 +273,7 @@ export interface AudioOnlyTickParams {
   playAbortRef: { current: { cancelled: boolean } }
   segmentsRef: { current: Segment[] }
   clipsRef: { current: Clip[] }
+  tracksRef: { current: TimelineTrack[] }
   audioUrlRef: { current: string | null }
   masterVolumeRef: { current: number }
   initialSeg: Segment
@@ -239,7 +288,7 @@ export interface AudioOnlyTickParams {
 export function startAudioOnlyTick(params: AudioOnlyTickParams): () => void {
   const {
     audioRef, rafRef, cancelPlayRef, playAbortRef,
-    segmentsRef, clipsRef, audioUrlRef, masterVolumeRef, initialSeg,
+    segmentsRef, clipsRef, tracksRef, audioUrlRef, masterVolumeRef, initialSeg,
     setPlayheadPosition, setIsPlaying,
   } = params
 
@@ -253,8 +302,9 @@ export function startAudioOnlyTick(params: AudioOnlyTickParams): () => void {
     setPlayheadPosition(seg.startOnTimeline + (rawTime - seg.inPoint))
 
     if (rawTime >= seg.outPoint - 0.05) {
+      const aIdx2 = audioIndices(tracksRef.current)
       const nextSeg = segmentsRef.current
-        .filter((s) => s.trackIndex === 2 && !s.muted && s.startOnTimeline > seg.startOnTimeline)
+        .filter((s) => aIdx2.has(s.trackIndex) && !s.muted && s.startOnTimeline > seg.startOnTimeline)
         .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0]
 
       if (nextSeg) {

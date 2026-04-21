@@ -3,7 +3,6 @@ import { useRef } from 'react'
 import { useAppStore } from '../../store/useAppStore'
 import MediaPanel from '../panels/MediaPanel/MediaPanel'
 import TextPanel from '../panels/TextPanel'
-import EffectsPanel from '../panels/EffectsPanel'
 import TransitionsPanel from '../panels/TransitionsPanel'
 import BpmPanel from '../panels/BpmPanel'
 import SettingsPanel from '../panels/SettingsPanel'
@@ -40,7 +39,7 @@ export default function LeftPanel({ width, onResizeStart, onResize }: Props) {
       <div className="flex flex-col overflow-hidden" style={{ flex: 1, minWidth: 0 }}>
         {activeTab === 'media'       && <MediaPanel />}
         {activeTab === 'text'        && <TextPanel />}
-        {activeTab === 'effects'     && <EffectsPanel />}
+        {activeTab === 'effects'     && <InspectorPanel />}
         {activeTab === 'transitions' && <TransitionsPanel />}
         {activeTab === 'bpm'         && <BpmPanel />}
         {activeTab === 'settings'    && <SettingsPanel />}

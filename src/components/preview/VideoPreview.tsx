@@ -10,9 +10,9 @@ import type { Segment } from '../../types'
 
 export default function VideoPreview() {
   const {
-    segments, clips, playheadPosition, isPlaying,
+    segments, clips, tracks, playheadPosition, isPlaying,
     setPlayheadPosition, setIsPlaying,
-    masterVolume, transitions,
+    masterVolume, transitions, loopRegion,
   } = useAppStore()
 
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -34,6 +34,12 @@ export default function VideoPreview() {
   const transitionVideoRef = useRef<HTMLVideoElement>(null)
   const transitionUrlRef = useRef<string | null>(null)
 
+  const tracksRef = useRef(tracks)
+  tracksRef.current = tracks
+
+  const loopRegionRef = useRef(loopRegion)
+  loopRegionRef.current = loopRegion
+
   const playAbortRef = useRef({ cancelled: false })
   const cancelPlayRef = useRef<() => void>(() => {})
 
@@ -42,25 +48,28 @@ export default function VideoPreview() {
   masterVolumeRef.current = masterVolume
   transitionsRef.current = transitions
 
-  const activeSeg = useMemo(() =>
-    segments.find(
-      (s) => s.trackIndex === 0 && !s.hidden &&
-        playheadPosition >= s.startOnTimeline &&
-        playheadPosition < s.startOnTimeline + (s.outPoint - s.inPoint) / Math.max(0.01, s.speed ?? 1),
-    ) ?? null,
-    [segments, playheadPosition],
+  const videoTrackIdx = useMemo(
+    () => new Set(tracks.filter((t) => t.type === 'video' && !t.hidden).map((t) => t.trackIndex)),
+    [tracks],
   )
+  const audioTrackIdx = useMemo(
+    () => new Set(tracks.filter((t) => t.type === 'audio' && !t.muted).map((t) => t.trackIndex)),
+    [tracks],
+  )
+
+  const activeSeg = useMemo(() => segments.find(
+    (s) => videoTrackIdx.has(s.trackIndex) && !s.hidden &&
+      playheadPosition >= s.startOnTimeline &&
+      playheadPosition < s.startOnTimeline + (s.outPoint - s.inPoint) / Math.max(0.01, s.speed ?? 1),
+  ) ?? null, [segments, playheadPosition, videoTrackIdx])
   const activeClip = activeSeg ? clips.find((c) => c.id === activeSeg.clipId) ?? null : null
   activeSegRef.current = activeSeg
 
-  const activeAudioSeg = useMemo(() =>
-    segments.find(
-      (s) => s.trackIndex === 2 && !s.muted &&
-        playheadPosition >= s.startOnTimeline &&
-        playheadPosition < s.startOnTimeline + (s.outPoint - s.inPoint),
-    ) ?? null,
-    [segments, playheadPosition],
-  )
+  const activeAudioSeg = useMemo(() => segments.find(
+    (s) => audioTrackIdx.has(s.trackIndex) && !s.muted &&
+      playheadPosition >= s.startOnTimeline &&
+      playheadPosition < s.startOnTimeline + (s.outPoint - s.inPoint),
+  ) ?? null, [segments, playheadPosition, audioTrackIdx])
   const activeAudioClip = activeAudioSeg ? clips.find((c) => c.id === activeAudioSeg.clipId) ?? null : null
   activeAudioSegRef.current = activeAudioSeg
 
@@ -97,7 +106,7 @@ export default function VideoPreview() {
     const video = videoRef.current
     if (!video) return
     if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null }
-    if (!activeClip?.file || activeClip.type === 'image') { video.src = ''; return }
+    if (!activeClip?.file || activeClip.type === 'image') { video.removeAttribute('src'); video.load(); return }
     const url = URL.createObjectURL(activeClip.file)
     objectUrlRef.current = url
     video.src = url
@@ -117,7 +126,7 @@ export default function VideoPreview() {
     if (isPlaying) return
     const audio = audioRef.current
     if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null }
-    if (!activeAudioClip?.file) { audio.src = ''; return }
+    if (!activeAudioClip?.file) { audio.removeAttribute('src'); audio.load(); return }
     const url = URL.createObjectURL(activeAudioClip.file)
     audioUrlRef.current = url
     audio.src = url
@@ -169,11 +178,20 @@ export default function VideoPreview() {
     playAbortRef.current = { cancelled: false }
     let audioOnlyCleanup = () => {}
 
+    // If loop region active and playhead is outside it, jump to loop start
+    const lr = loopRegionRef.current
+    if (lr && (playheadPosition < lr.start || playheadPosition >= lr.end)) {
+      setPlayheadPosition(lr.start)
+    }
+
     // Resolve the starting video segment (skip hidden segments)
+    const vIdx = new Set(tracksRef.current.filter((t) => t.type === 'video' && !t.hidden).map((t) => t.trackIndex))
+    const aIdx = new Set(tracksRef.current.filter((t) => t.type === 'audio' && !t.muted).map((t) => t.trackIndex))
+
     let startSeg = activeSeg
     if (startSeg?.hidden) {
       const nextVisible = segmentsRef.current
-        .filter((s) => s.trackIndex === 0 && !s.hidden && s.startOnTimeline >= startSeg!.startOnTimeline)
+        .filter((s) => vIdx.has(s.trackIndex) && !s.hidden && s.startOnTimeline >= startSeg!.startOnTimeline)
         .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0] ?? null
       if (!nextVisible) { setIsPlaying(false); return }
       startSeg = nextVisible
@@ -182,13 +200,13 @@ export default function VideoPreview() {
     if (!startSeg) {
       // No video segment at playhead — find first visible video segment on timeline
       const firstVideoSeg = [...segmentsRef.current]
-        .filter((s) => s.trackIndex === 0 && !s.hidden)
+        .filter((s) => vIdx.has(s.trackIndex) && !s.hidden)
         .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0] ?? null
 
       if (!firstVideoSeg) {
         // No video at all — try audio-only path
         const firstAudioSeg = [...segmentsRef.current]
-          .filter((s) => s.trackIndex === 2)
+          .filter((s) => aIdx.has(s.trackIndex))
           .sort((a, b) => a.startOnTimeline - b.startOnTimeline)[0] ?? null
 
         if (!firstAudioSeg) {
@@ -216,6 +234,7 @@ export default function VideoPreview() {
           playAbortRef,
           segmentsRef,
           clipsRef,
+          tracksRef,
           audioUrlRef,
           masterVolumeRef,
           initialSeg: firstAudioSeg,
@@ -258,6 +277,7 @@ export default function VideoPreview() {
         audioRef,
         segmentsRef,
         clipsRef,
+        tracksRef,
         activeSegRef,
         objectUrlRef,
         stallCountRef,
@@ -268,6 +288,7 @@ export default function VideoPreview() {
         transitionVideoRef,
         transitionUrlRef,
         transitionsRef,
+        loopRegionRef,
         setPlayheadPosition,
         setIsPlaying,
       })
@@ -312,6 +333,8 @@ export default function VideoPreview() {
       >
         <video
           ref={videoRef}
+          playsInline
+          preload="auto"
           style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', background: '#000',
             filter: buildCSSFilter(activeSeg?.effects ?? []) || undefined,

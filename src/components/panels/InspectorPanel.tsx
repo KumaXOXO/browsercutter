@@ -212,6 +212,7 @@ function AdjustmentInspector({ layer, onUpdate, onDelete }: { layer: AdjustmentL
 }
 
 function TextOverlayInspector({ overlay, onUpdate, onDelete }: { overlay: TextOverlay; onUpdate: (patch: Partial<TextOverlay>) => void; onDelete: () => void }) {
+  const availableFonts = useAppStore((s) => s.availableFonts)
   const [localSize, setLocalSize] = useState(overlay.size)
   const [localX, setLocalX] = useState(Math.round(overlay.x * 100))
   const [localY, setLocalY] = useState(Math.round(overlay.y * 100))
@@ -261,7 +262,16 @@ function TextOverlayInspector({ overlay, onUpdate, onDelete }: { overlay: TextOv
 
       <div className="grid grid-cols-2 gap-2">
         <Field label="Font">
-          <InpField value={overlay.font} onChange={(v) => onUpdate({ font: v })} />
+          <select
+            className="inp"
+            value={overlay.font}
+            onChange={(e) => onUpdate({ font: e.target.value })}
+            style={{ fontFamily: overlay.font }}
+          >
+            {availableFonts.map((f) => (
+              <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
+            ))}
+          </select>
         </Field>
         <Field label={`Size — ${localSize}px`}>
           <input

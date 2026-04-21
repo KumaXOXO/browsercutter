@@ -12,6 +12,11 @@ export default function TextTrack({ zoom, trackLabelWidth }: Props) {
   const { textOverlays, selectedElement, setSelectedElement } = useAppStore()
   const px = PX_PER_SEC * zoom
 
+  const totalWidth = Math.max(
+    700,
+    textOverlays.reduce((max, o) => Math.max(max, (o.startOnTimeline + o.duration) * px), 0) + 300,
+  )
+
   return (
     <div
       className="flex items-center"
@@ -23,7 +28,7 @@ export default function TextTrack({ zoom, trackLabelWidth }: Props) {
       >
         <Type size={9} /> Text
       </div>
-      <div className="relative h-full" style={{ width: 700 }}>
+      <div className="relative h-full" style={{ width: totalWidth }}>
         {textOverlays.map((overlay) => {
           const left = overlay.startOnTimeline * px
           const width = Math.max(4, overlay.duration * px)

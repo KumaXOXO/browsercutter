@@ -2,6 +2,7 @@
 import { X, Download, AlertCircle, CheckCircle } from 'lucide-react'
 import { useExport } from '../../lib/export/useExport'
 import { useAppStore } from '../../store/useAppStore'
+import { getSaveDirName } from '../../lib/saveManager'
 import type { ExportFormat } from '../../types'
 
 interface Props {
@@ -19,6 +20,7 @@ const QUALITY_LABELS: Record<Quality, { label: string; hint: string }> = {
 export default function ExportModal({ onClose }: Props) {
   const { status, progress, label, errorMsg, startExport, cancel } = useExport()
   const { projectSettings, updateProjectSettings } = useAppStore()
+  const saveDirName = getSaveDirName()
   const { format, quality } = projectSettings
 
   function handleClose() {
@@ -120,6 +122,13 @@ export default function ExportModal({ onClose }: Props) {
                   First export loads ~31 MB of FFmpeg WASM from CDN. Subsequent exports are instant.
                 </p>
               </div>
+              {saveDirName && (
+                <div className="rounded-lg p-3" style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.2)' }}>
+                  <p className="text-xs" style={{ color: '#34D399' }}>
+                    Export will be saved to: <strong>{saveDirName}/export/</strong>
+                  </p>
+                </div>
+              )}
             </>
           )}
 
@@ -153,7 +162,7 @@ export default function ExportModal({ onClose }: Props) {
               <CheckCircle size={16} style={{ color: '#34D399', flexShrink: 0 }} />
               <div>
                 <p className="text-sm font-semibold" style={{ color: '#34D399' }}>Export complete</p>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--muted-subtle)' }}>Your video has been downloaded.</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--muted-subtle)' }}>{saveDirName ? `Saved to ${saveDirName}/export/` : 'Your video has been downloaded.'}</p>
               </div>
             </div>
           )}
