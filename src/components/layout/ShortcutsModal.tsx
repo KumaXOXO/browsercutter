@@ -1,5 +1,5 @@
 // src/components/layout/ShortcutsModal.tsx
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 
 const SHORTCUTS: { keys: string[]; description: string; context?: string }[] = [
@@ -17,9 +17,30 @@ interface Props {
 }
 
 export default function ShortcutsModal({ onClose }: Props) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => { closeButtonRef.current?.focus() }, [])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopImmediatePropagation(); onClose() }
+      if (e.key === 'Escape') { e.stopImmediatePropagation(); onClose(); return }
+      if (e.key !== 'Tab') return
+      const dialog = dialogRef.current
+      if (!dialog) return
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+        )
+      )
+      if (!focusable.length) { e.preventDefault(); return }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -36,6 +57,7 @@ export default function ShortcutsModal({ onClose }: Props) {
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Keyboard Shortcuts"
@@ -51,6 +73,7 @@ export default function ShortcutsModal({ onClose }: Props) {
         <div className="flex items-center justify-between mb-4">
           <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Keyboard Shortcuts</span>
           <button
+            ref={closeButtonRef}
             aria-label="Close"
             onClick={onClose}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted-subtle)', padding: 2 }}

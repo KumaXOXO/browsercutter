@@ -53,4 +53,25 @@ describe('ShortcutsModal', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onClose).not.toHaveBeenCalled()
   })
+
+  it('auto-focuses the close button on mount', () => {
+    render(<ShortcutsModal onClose={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
+  })
+
+  it('traps Tab on the last focusable element', () => {
+    render(<ShortcutsModal onClose={vi.fn()} />)
+    const closeBtn = screen.getByRole('button', { name: 'Close' })
+    closeBtn.focus()
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(closeBtn).toHaveFocus()
+  })
+
+  it('traps Shift+Tab on the first focusable element', () => {
+    render(<ShortcutsModal onClose={vi.fn()} />)
+    const closeBtn = screen.getByRole('button', { name: 'Close' })
+    closeBtn.focus()
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+    expect(closeBtn).toHaveFocus()
+  })
 })

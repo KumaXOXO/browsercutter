@@ -1,5 +1,5 @@
 // src/components/layout/TopBar.tsx
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, forwardRef } from 'react'
 import { Undo2, Redo2, Save, FolderOpen, HelpCircle } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import ExportModal from '../export/ExportModal'
@@ -35,7 +35,11 @@ export default function TopBar() {
   useEffect(() => { showShortcutsRef.current = showShortcuts }, [showShortcuts])
   const showExportRef = useRef(false)
   useEffect(() => { showExportRef.current = showExport }, [showExport])
-  const handleCloseShortcuts = useCallback(() => setShowShortcuts(false), [])
+  const helpBtnRef = useRef<HTMLButtonElement>(null)
+  const handleCloseShortcuts = useCallback(() => {
+    setShowShortcuts(false)
+    requestAnimationFrame(() => helpBtnRef.current?.focus())
+  }, [])
 
   function handleSave() {
     saveProject()
@@ -124,7 +128,7 @@ export default function TopBar() {
 
       {/* Right: actions */}
       <div className="flex items-center gap-1.5">
-        <IconBtn title="Keyboard shortcuts (?)" onClick={() => setShowShortcuts(true)}><HelpCircle size={14} /></IconBtn>
+        <IconBtn ref={helpBtnRef} title="Keyboard shortcuts (?)" onClick={() => setShowShortcuts(true)}><HelpCircle size={14} /></IconBtn>
         <div className="w-px h-4 mx-0.5" style={{ background: 'var(--border-subtle)' }} />
         <IconBtn title="Undo (Ctrl+Z)" onClick={undo} disabled={!canUndo()}><Undo2 size={14} /></IconBtn>
         <IconBtn title="Redo (Ctrl+Y)" onClick={redo} disabled={!canRedo()}><Redo2 size={14} /></IconBtn>
@@ -169,9 +173,10 @@ function Logo() {
   )
 }
 
-function IconBtn({ children, title, onClick, disabled }: { children: React.ReactNode; title: string; onClick?: () => void; disabled?: boolean }) {
-  return (
+const IconBtn = forwardRef<HTMLButtonElement, { children: React.ReactNode; title: string; onClick?: () => void; disabled?: boolean }>(
+  ({ children, title, onClick, disabled }, ref) => (
     <button
+      ref={ref}
       title={title}
       onClick={onClick}
       disabled={disabled}
@@ -183,7 +188,7 @@ function IconBtn({ children, title, onClick, disabled }: { children: React.React
       {children}
     </button>
   )
-}
+)
 
 function GhostBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
   return (

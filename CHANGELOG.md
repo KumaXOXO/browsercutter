@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.0] — 2026-04-21
+
+### Added
+- Focus trap in ShortcutsModal: Tab and Shift+Tab cycle only within the dialog (WCAG 2.1 SC 2.1.2)
+- Auto-focus the Close button when the shortcuts modal opens
+- Focus restore: closing the modal returns focus to the HelpCircle trigger button
+- `IconBtn` now forwards its `ref` so the trigger button can be targeted for focus restore
+- 3 new tests for focus behavior (auto-focus, Tab trap, Shift+Tab trap); 128 tests passing
+
 ## [0.12.0] — 2026-04-20
 
 ### Added
