@@ -123,8 +123,8 @@ describe('loadProject', () => {
       adjustmentLayers: [],
       isPlaying: true,
       playheadPosition: 5,
-      _history: [{ segments: [], textOverlays: [] }],
-      _future: [{ segments: [], textOverlays: [] }],
+      _history: [{ segments: [], textOverlays: [], transitions: [] }],
+      _future: [{ segments: [], textOverlays: [], transitions: [] }],
     })
   })
 

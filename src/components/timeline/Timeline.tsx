@@ -33,7 +33,7 @@ const ADD_OPTIONS: { type: TimelineTrack['type']; label: string }[] = [
 export default function Timeline({ height = 205, isDragging = false }: Props) {
   const [zoom, setZoom] = useState(1)
   const [showAddModal, setShowAddModal] = useState(false)
-  const { playheadPosition, tracks, addTrack, updateTrack, removeTrack, moveTrack } = useAppStore()
+  const { playheadPosition, tracks, updateTrack, removeTrack, moveTrack } = useAppStore()
 
   // Global multi-select keyboard shortcuts
   useEffect(() => {

@@ -27,7 +27,7 @@ const TRANSITION_SYMBOLS: Record<string, string> = {
 }
 
 export default function ClipBlock({ segment, clip, zoom }: Props) {
-  const { selectedElement, setSelectedElement, removeSegment, removeSegments, updateSegment, addTransition, removeTransition, projectSettings, transitions, selectedSegmentIds, setSelectedSegmentIds, toggleSegmentSelection, segments, clips } = useAppStore()
+  const { selectedElement, setSelectedElement, removeSegment, updateSegment, addTransition, removeTransition, projectSettings, transitions, selectedSegmentIds, setSelectedSegmentIds, toggleSegmentSelection, segments, clips } = useAppStore()
   const showThumbnails = projectSettings.showClipThumbnails ?? false
   const transitionAfter = transitions.find((t) => t.beforeSegmentId === segment.id && t.type !== 'cut')
   const isSelected = selectedElement?.id === segment.id
@@ -119,9 +119,6 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
     const offsetX = e.clientX - trackRect.left + scrollLeft - left
     const startPositions = Object.fromEntries(
       segments.filter((s) => multiIds.includes(s.id)).map((s) => [s.id, s.startOnTimeline])
-    )
-    const startTrackIndices = Object.fromEntries(
-      segments.filter((s) => multiIds.includes(s.id)).map((s) => [s.id, s.trackIndex])
     )
 
     // Set pointer-events:none on this element so elementsFromPoint can see tracks below
