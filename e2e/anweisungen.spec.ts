@@ -271,3 +271,34 @@ test('missing files banner: appears when used clip has no file', async ({ page }
   // App.tsx renders: "N clip(s) need re-importing"
   await expect(page.locator('text=re-importing')).toBeVisible({ timeout: 4000 })
 })
+
+// ── 11. loadProject preserves real File objects ──────────────────────────────
+test('loadProject: preserves File objects when passed in data (directory load path)', async ({ page }) => {
+  await loadApp(page)
+  // Simulate what loadProjectFromDir does: pass clips with real File objects to loadProject
+  const filePreserved = await page.evaluate(() => {
+    const store = (window as unknown as Record<string, {
+      getState?(): Record<string, unknown>
+      setState?(s: unknown): void
+    }>).__BC_STORE__
+    if (!store) return false
+    const state = store.getState() as {
+      loadProject(d: Record<string, unknown>): void
+      clips: Array<{ id: string; file: File | null }>
+    }
+    // Create a fake File object
+    const fakeFile = new File(['dummy'], 'test.mp4', { type: 'video/mp4' })
+    state.loadProject({
+      projectName: 'Test',
+      projectSettings: { resolution: '1920x1080', fps: 30, format: 'mp4', quality: 'good', snapToBeat: false, autoDetectBpm: false, hardwareAcceleration: false, showClipThumbnails: false },
+      segments: [],
+      clips: [{ id: 'file-test', name: 'test.mp4', type: 'video', duration: 5, file: fakeFile }],
+      tracks: [],
+    })
+    // Re-read state after mutation — old reference is stale after set()
+    const fresh = (store.getState() as { clips: Array<{ id: string; file: unknown }> }).clips
+    const loaded = fresh.find((c) => c.id === 'file-test')
+    return loaded?.file instanceof File
+  })
+  expect(filePreserved).toBe(true)
+})

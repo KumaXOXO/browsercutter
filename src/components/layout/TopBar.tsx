@@ -4,7 +4,7 @@ import { Undo2, Redo2, Save, FolderOpen, HelpCircle } from 'lucide-react'
 import { useAppStore } from '../../store/useAppStore'
 import ExportModal from '../export/ExportModal'
 import ShortcutsModal from './ShortcutsModal'
-import { saveProjectFile, hasSaveDir, getSaveDirName } from '../../lib/saveManager'
+import { saveProjectFile, loadProjectFromDir, hasSaveDir, getSaveDirName } from '../../lib/saveManager'
 
 export function validateProjectJSON(json: unknown): { valid: true; data: Record<string, unknown> } | { valid: false; error: string } {
   if (typeof json !== 'object' || json === null || Array.isArray(json)) {
@@ -85,8 +85,25 @@ export default function TopBar() {
     }
   }
 
-  function handleLoadClick() {
-    fileInputRef.current?.click()
+  async function handleLoadClick() {
+    if ('showDirectoryPicker' in window) {
+      const result = await loadProjectFromDir()
+      if (!result.ok) {
+        if (result.reason !== 'cancelled') alert(`Load failed: ${result.reason}`)
+        return
+      }
+      const validation = validateProjectJSON(result.data!)
+      if (!validation.valid) {
+        alert(`Load failed: ${validation.error}`)
+        return
+      }
+      loadProject(validation.data)
+      setSavedOnce(true)
+      setSaveDirName(getSaveDirName())
+      setHasUnsavedChanges(false)
+    } else {
+      fileInputRef.current?.click()
+    }
   }
 
   function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {

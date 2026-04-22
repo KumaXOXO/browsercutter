@@ -261,7 +261,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const existing = get()
     const clips = (data.clips as Array<Record<string, unknown>>).map((c) => ({
       ...c,
-      file: null as unknown as File,
+      file: (c.file instanceof File ? c.file : null) as unknown as File,
     })) as Clip[]
     set({
       projectName: (data.projectName as string | undefined) ?? existing.projectName,

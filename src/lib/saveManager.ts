@@ -78,6 +78,53 @@ export async function saveProjectFile(): Promise<{ ok: boolean; reason?: string 
   }
 }
 
+export async function loadProjectFromDir(): Promise<{ ok: boolean; data?: Record<string, unknown>; reason?: string }> {
+  if (!('showDirectoryPicker' in window)) {
+    return { ok: false, reason: 'File System Access API not supported in this browser.' }
+  }
+  try {
+    const picker = (window as unknown as { showDirectoryPicker(o: { mode: string }): Promise<FileSystemDirectoryHandle> }).showDirectoryPicker
+    const dir = await picker({ mode: 'readwrite' })
+    _saveDir = dir
+
+    let projectFh: FileSystemFileHandle
+    try {
+      projectFh = await dir.getFileHandle('project.json')
+    } catch {
+      return { ok: false, reason: 'No project.json found in the selected folder. Did you pick the right folder?' }
+    }
+
+    const projectFile = await projectFh.getFile()
+    const json = JSON.parse(await projectFile.text()) as Record<string, unknown>
+
+    // Restore media files from the media/ subdirectory
+    let mediaDir: FileSystemDirectoryHandle | null = null
+    try { mediaDir = await dir.getDirectoryHandle('media') } catch { /* no media dir */ }
+
+    if (mediaDir) {
+      const rawClips = json.clips as Array<Record<string, unknown>>
+      const md = mediaDir
+      json.clips = await Promise.all(rawClips.map(async (clip) => {
+        const mediaPath = clip.mediaPath as string | undefined
+        if (!mediaPath) return clip
+        try {
+          const filename = mediaPath.replace(/^media\//, '')
+          const fileFh = await md.getFileHandle(filename)
+          const file = await fileFh.getFile()
+          return { ...clip, file }
+        } catch {
+          return clip
+        }
+      }))
+    }
+
+    return { ok: true, data: json }
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === 'AbortError') return { ok: false, reason: 'cancelled' }
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 export async function writeExportFile(buffer: ArrayBuffer, filename: string): Promise<boolean> {
   if (!_saveDir) return false
   try {
