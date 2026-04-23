@@ -250,7 +250,37 @@ export default function Timeline({ height = 205, isDragging = false }: Props) {
             onBlur={(e)  => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = projectSettings.snapToBeat ? 'var(--muted2)' : 'var(--muted-subtle)' }}
           />
 
-          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--muted-subtle)', fontSize: 10 }}>Timeline</span>
+          {/* Grid step selector — pill-shaped note-value toggle, only when Grid is on */}
+          {projectSettings.snapToBeat && (
+            <div
+              title="Grid step — beats per marker"
+              style={{ display: 'flex', border: '1px solid var(--border-subtle)', borderRadius: 5, overflow: 'hidden' }}
+            >
+              {([{ v: 0.25, label: '¼' }, { v: 0.5, label: '½' }, { v: 1, label: '1' }, { v: 2, label: '2' }, { v: 4, label: '4' }] as { v: number; label: string }[]).map(({ v, label }, idx) => {
+                const active = (bpmConfig.gridStep ?? 1) === v
+                return (
+                  <button
+                    key={v}
+                    title={`Grid: ${label} beat${v !== 1 ? 's' : ''} per mark`}
+                    onClick={() => updateBpmConfig({ gridStep: v })}
+                    style={{
+                      padding: '2px 5px', fontSize: 9, lineHeight: '1.6', fontFamily: 'monospace',
+                      fontWeight: active ? 700 : 400,
+                      color: active ? '#F43F5E' : 'var(--muted-subtle)',
+                      background: active ? 'rgba(225,29,72,0.12)' : 'transparent',
+                      border: 'none',
+                      borderRight: idx < 4 ? '1px solid var(--border-subtle)' : 'none',
+                      cursor: 'pointer',
+                      transition: 'color 120ms, background 120ms',
+                    }}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           <button
             className="text-xs rounded cursor-pointer transition-all duration-150"
             style={{ padding: '2px 8px', color: 'var(--muted2)', background: 'transparent', border: '1px solid var(--border-subtle)' }}

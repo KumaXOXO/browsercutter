@@ -30,12 +30,14 @@ export default function TimeRuler({
     if (!projectSettings.snapToBeat) return []
     const bpm = bpmConfig.bpm
     if (!bpm || bpm <= 0) return []
-    const beatDur = 60 / bpm
+    const step = bpmConfig.gridStep ?? 1
+    const beatDur = (60 / bpm) * step
     const gap = beatDur * px
     if (gap < 3) return []
     const count = Math.ceil(totalDur / beatDur)
-    return Array.from({ length: count }, (_, i) => i * beatDur)
-  }, [bpmConfig.bpm, px, totalDur, projectSettings.snapToBeat])
+    const subDiv = step < 1 ? Math.round(1 / step) : 1
+    return Array.from({ length: count }, (_, i) => ({ sec: i * beatDur, isBeat: step >= 1 || i % subDiv === 0 }))
+  }, [bpmConfig.bpm, bpmConfig.gridStep, px, totalDur, projectSettings.snapToBeat])
 
   const loopDragStartXRef = useRef(0)
 
@@ -135,10 +137,11 @@ export default function TimeRuler({
         onDoubleClick={handleDoubleClick}
       >
         {/* Beat markers */}
-        {beatMarkers.map((t, i) => (
+        {beatMarkers.map((m, i) => (
           <div key={i} style={{
-            position: 'absolute', top: 0, bottom: 0, left: t * px, width: 1,
-            background: 'rgba(225,29,72,0.25)', pointerEvents: 'none', zIndex: 1,
+            position: 'absolute', top: 0, bottom: 0, left: m.sec * px, width: 1,
+            background: m.isBeat ? 'rgba(225,29,72,0.35)' : 'rgba(225,29,72,0.15)',
+            pointerEvents: 'none', zIndex: 1,
           }} />
         ))}
         {/* Loop region highlight */}

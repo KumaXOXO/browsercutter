@@ -166,10 +166,11 @@ export function startVideoTick(params: VideoTickParams): void {
         if (loopStartSeg && video) {
           const loopClip = clipsRef.current.find((c) => c.id === loopStartSeg.clipId)
           if (loopClip?.file) {
-            if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+            const prevUrl = objectUrlRef.current
             const url = URL.createObjectURL(loopClip.file)
             objectUrlRef.current = url
             video.src = url
+            if (prevUrl) URL.revokeObjectURL(prevUrl)
             video.currentTime = loopStartSeg.inPoint + (loop.start - loopStartSeg.startOnTimeline) * Math.max(0.01, loopStartSeg.speed ?? 1)
             video.volume = Math.min(1, (loopStartSeg.volume ?? 1) * masterVolumeRef.current)
             video.playbackRate = loopStartSeg.speed ?? 1
@@ -178,6 +179,16 @@ export function startVideoTick(params: VideoTickParams): void {
             cancelPlayRef.current = playWhenReady(video, () => setIsPlaying(false), playAbortRef.current)
             activeSegRef.current = loopStartSeg
             stallCountRef.current = 0
+            // Seek audio track to loop start position
+            const aIdxGap = audioIndices(tracksRef.current)
+            const audioLoopSegGap = segmentsRef.current.find(
+              (s) => aIdxGap.has(s.trackIndex) && !s.muted &&
+                loop.start >= s.startOnTimeline &&
+                loop.start < s.startOnTimeline + (s.outPoint - s.inPoint),
+            )
+            if (audioLoopSegGap && !audioRef.current.paused) {
+              audioRef.current.currentTime = audioLoopSegGap.inPoint + (loop.start - audioLoopSegGap.startOnTimeline)
+            }
             rafRef.current = requestAnimationFrame(tick)
             return
           }
@@ -191,10 +202,11 @@ export function startVideoTick(params: VideoTickParams): void {
         inGap = false; gapNextSeg = null
         const nextClip = clipsRef.current.find((c) => c.id === ns.clipId)
         if (!nextClip?.file || !video) { setIsPlaying(false); return }
-        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+        const prevUrl2 = objectUrlRef.current
         const url = URL.createObjectURL(nextClip.file)
         objectUrlRef.current = url
         video.src = url
+        if (prevUrl2) URL.revokeObjectURL(prevUrl2)
         video.currentTime = ns.inPoint
         video.volume = Math.min(1, (ns.volume ?? 1) * masterVolumeRef.current)
         video.playbackRate = ns.speed ?? 1
@@ -272,11 +284,12 @@ export function startVideoTick(params: VideoTickParams): void {
         })
         cancelPlayRef.current = () => { abort.cancelled = true }
       } else {
-        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+        const prevUrl3 = objectUrlRef.current
         const url = URL.createObjectURL(correctClip.file)
         objectUrlRef.current = url
         video.style.opacity = '1'
         video.src = url
+        if (prevUrl3) URL.revokeObjectURL(prevUrl3)
         video.currentTime = seekTime
         video.volume = Math.min(1, (correctSeg.volume ?? 1) * masterVolumeRef.current)
         video.playbackRate = correctSeg.speed ?? 1
@@ -300,10 +313,11 @@ export function startVideoTick(params: VideoTickParams): void {
         if (loopClip?.file) {
           cancelPlayRef.current()
           if (loopStartSeg.id !== seg.id) {
-            if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+            const prevUrl4 = objectUrlRef.current
             const url = URL.createObjectURL(loopClip.file)
             objectUrlRef.current = url
             video.src = url
+            if (prevUrl4) URL.revokeObjectURL(prevUrl4)
           }
           const seekTime = loopStartSeg.inPoint + (loop.start - loopStartSeg.startOnTimeline) * Math.max(0.01, loopStartSeg.speed ?? 1)
           video.currentTime = seekTime
@@ -314,6 +328,15 @@ export function startVideoTick(params: VideoTickParams): void {
           cancelPlayRef.current = playWhenReady(video, () => setIsPlaying(false), playAbortRef.current)
           activeSegRef.current = loopStartSeg
           stallCountRef.current = 0
+          // Seek audio track to loop start position so it loops in sync with video
+          const audioLoopSeg = segmentsRef.current.find(
+            (s) => aIdx.has(s.trackIndex) && !s.muted &&
+              loop.start >= s.startOnTimeline &&
+              loop.start < s.startOnTimeline + (s.outPoint - s.inPoint),
+          )
+          if (audioLoopSeg && !audioRef.current.paused) {
+            audioRef.current.currentTime = audioLoopSeg.inPoint + (loop.start - audioLoopSeg.startOnTimeline)
+          }
           rafRef.current = requestAnimationFrame(tick)
           return
         }
@@ -422,7 +445,7 @@ export function startVideoTick(params: VideoTickParams): void {
             playAbortRef.current = { cancelled: false }
             cancelPlayRef.current = playWhenReady(video, () => setIsPlaying(false), playAbortRef.current)
           } else {
-            if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+            const prevUrl6 = objectUrlRef.current
             const tUrl = transitionUrlRef.current
             const tTime = transitionVideoRef.current.currentTime
             transitionUrlRef.current = null
@@ -432,6 +455,7 @@ export function startVideoTick(params: VideoTickParams): void {
             transitionVideoRef.current.style.display = 'none'
             objectUrlRef.current = tUrl
             video.src = tUrl
+            if (prevUrl6) URL.revokeObjectURL(prevUrl6)
             video.currentTime = tTime
             video.volume = Math.min(1, (nextSeg.volume ?? 1) * masterVolumeRef.current)
             video.playbackRate = nextSeg.speed ?? 1
@@ -462,10 +486,11 @@ export function startVideoTick(params: VideoTickParams): void {
               })
               cancelPlayRef.current = () => { abort.cancelled = true }
             } else {
-              if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current)
+              const prevUrl5 = objectUrlRef.current
               const url = URL.createObjectURL(nextClip.file)
               objectUrlRef.current = url
               video.src = url
+              if (prevUrl5) URL.revokeObjectURL(prevUrl5)
               video.currentTime = nextSeekTime
               video.volume = Math.min(1, (nextSeg.volume ?? 1) * masterVolumeRef.current)
               video.playbackRate = nextSeg.speed ?? 1

@@ -175,10 +175,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     bpm: 120,
     mode: 'random',
     segmentLength: 1,
-    outputDuration: 30,
-    outputUnit: 'seconds',
+    outputDuration: 32,
+    outputUnit: 'beats',
     selectedClipIds: [],
     onlyWholeClips: true,
+    gridStep: 1,
   },
 
   // ─── Timeline mode ───

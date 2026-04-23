@@ -82,6 +82,7 @@ export interface BpmConfig {
   outputUnit: 'seconds' | 'beats'
   selectedClipIds: ClipId[]
   onlyWholeClips?: boolean
+  gridStep?: number  // beat subdivisions: 0.25=¼, 0.5=½, 1=1, 2=2, 4=4 beats per mark
 }
 
 export interface TimelineTrack {

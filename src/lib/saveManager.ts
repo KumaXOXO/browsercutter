@@ -40,10 +40,15 @@ export async function saveProjectFile(): Promise<{ ok: boolean; reason?: string;
       const serializedClips = await Promise.all(clips.map(async ({ file, ...meta }) => {
         if (!file) return meta
         try {
+          const buf = await file.arrayBuffer()
           const fh = await mediaDir.getFileHandle(file.name, { create: true })
           const writable = await fh.createWritable()
-          await writable.write(await file.arrayBuffer())
+          await writable.write(buf)
           await writable.close()
+          // Replace in-memory File with a heap-backed copy so export works even if
+          // the original source file is later moved or deleted.
+          const heapFile = new File([buf], file.name, { type: file.type, lastModified: file.lastModified })
+          useAppStore.getState().updateClip(meta.id as string, { file: heapFile })
           return { ...meta, mediaPath: `media/${file.name}` }
         } catch {
           skippedFiles.push(file.name)

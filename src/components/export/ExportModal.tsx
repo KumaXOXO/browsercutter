@@ -35,7 +35,7 @@ export default function ExportModal({ onClose }: Props) {
     <div
       className="fixed inset-0 flex items-center justify-center z-50"
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
-      onClick={(e) => { if (e.target === e.currentTarget) handleClose() }}
+      onClick={(e) => { if (e.target === e.currentTarget && status !== 'running') handleClose() }}
     >
       <div
         className="flex flex-col rounded-xl overflow-hidden"
