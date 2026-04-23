@@ -138,6 +138,10 @@ export function startVideoTick(params: VideoTickParams): void {
   let gapPlayheadStart = 0
   let gapNextSeg: Segment | null = null
 
+  // --- Non-transition preload state: loads next clip early into transitionVideoRef ---
+  let preloadPending = false
+  let preloadForSegId: string | null = null
+
   // Start in gap mode if the caller detected the playhead is between segments
   if (params.initialGapTarget) {
     inGap = true
@@ -398,6 +402,35 @@ export function startVideoTick(params: VideoTickParams): void {
       }
     }
 
+    // Non-transition preload: when within 1.5 s of clip end and a different clip follows,
+    // load it into the invisible transitionVideoRef so the browser buffers it ahead of time.
+    // This reduces the black flash when the main video's src is changed at swap time.
+    const PRELOAD_AHEAD = 1.5
+    const segDurForPreload = (seg.outPoint - seg.inPoint) / Math.max(0.01, seg.speed ?? 1)
+    const timeToEnd = (seg.startOnTimeline + segDurForPreload) - currentPlayhead
+    if (
+      !hasGap && nextSeg && !preloadPending &&
+      !transitionUrlRef.current &&
+      transitionVideoRef.current &&
+      timeToEnd <= PRELOAD_AHEAD && timeToEnd > 0.05
+    ) {
+      const nextClipPre = clipsRef.current.find((c) => c.id === nextSeg.clipId)
+      if (nextClipPre?.file && nextClipPre.id !== seg.clipId) {
+        const preUrl = URL.createObjectURL(nextClipPre.file)
+        transitionUrlRef.current = preUrl
+        preloadPending = true
+        preloadForSegId = nextSeg.id
+        const tv = transitionVideoRef.current
+        tv.style.display = 'block'
+        tv.style.opacity = '0'
+        tv.src = preUrl
+        tv.currentTime = nextSeekTime
+        tv.volume = 0
+        tv.playbackRate = nextSeg.speed ?? 1
+        tv.load()
+      }
+    }
+
     // For transitions to adjacent segments, preload early; for gaps, wait to the very end.
     const swapThreshold = hasGap ? 0.033 : Math.max(0.15, 0.15 * (seg.speed ?? 1))
 
@@ -418,6 +451,16 @@ export function startVideoTick(params: VideoTickParams): void {
           video.load()
           video.style.opacity = '0'
           if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null }
+          // Clean up any pending preload
+          if (preloadPending && transitionUrlRef.current) {
+            URL.revokeObjectURL(transitionUrlRef.current)
+            transitionUrlRef.current = null
+            if (transitionVideoRef.current) {
+              transitionVideoRef.current.pause(); transitionVideoRef.current.src = ''
+              transitionVideoRef.current.style.display = 'none'; transitionVideoRef.current.style.opacity = '0'
+            }
+          }
+          preloadPending = false; preloadForSegId = null
           activeSegRef.current = null
           inGap = true
           gapRealStart = performance.now()
@@ -486,10 +529,26 @@ export function startVideoTick(params: VideoTickParams): void {
               })
               cancelPlayRef.current = () => { abort.cancelled = true }
             } else {
+              // Use preloaded URL if available (already buffered by transitionVideoRef).
+              // Reusing an already-loaded blob URL avoids most of the black flash.
+              const usePreload = preloadPending && preloadForSegId === nextSeg.id && transitionUrlRef.current
+              const swapUrl = usePreload
+                ? transitionUrlRef.current!
+                : URL.createObjectURL(nextClip.file)
+              if (usePreload) {
+                preloadPending = false
+                preloadForSegId = null
+                transitionUrlRef.current = null
+                if (transitionVideoRef.current) {
+                  transitionVideoRef.current.pause()
+                  transitionVideoRef.current.src = ''
+                  transitionVideoRef.current.style.display = 'none'
+                  transitionVideoRef.current.style.opacity = '0'
+                }
+              }
               const prevUrl5 = objectUrlRef.current
-              const url = URL.createObjectURL(nextClip.file)
-              objectUrlRef.current = url
-              video.src = url
+              objectUrlRef.current = swapUrl
+              video.src = swapUrl
               if (prevUrl5) URL.revokeObjectURL(prevUrl5)
               video.currentTime = nextSeekTime
               video.volume = Math.min(1, (nextSeg.volume ?? 1) * masterVolumeRef.current)

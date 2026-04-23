@@ -3,13 +3,21 @@ import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 
 const SHORTCUTS: { keys: string[]; description: string; context?: string }[] = [
-  { keys: ['Space'],         description: 'Play / Pause' },
+  { keys: ['Space'],              description: 'Play / Pause' },
   { keys: ['Delete', 'Backspace'], description: 'Remove selected clip' },
-  { keys: ['H'],             description: 'Hide / Show selected clip' },
-  { keys: ['M'],             description: 'Mute / Unmute selected clip' },
-  { keys: ['Ctrl', 'Z'],    description: 'Undo' },
-  { keys: ['Ctrl', 'Y'],    description: 'Redo', context: 'or Ctrl+Shift+Z' },
-  { keys: ['Ctrl', 'S'],    description: 'Save project' },
+  { keys: ['H'],                  description: 'Hide / Show selected clip' },
+  { keys: ['M'],                  description: 'Mute / Unmute selected clip' },
+  { keys: ['.'],                  description: 'Step forward one frame' },
+  { keys: [','],                  description: 'Step back one frame' },
+  { keys: ['Ctrl', 'A'],         description: 'Select all clips' },
+  { keys: ['Shift', 'A'],        description: 'Select all clips in current track' },
+  { keys: ['Ctrl', 'Shift', 'A'], description: 'Select all clips of same track type' },
+  { keys: ['Ctrl', 'Z'],         description: 'Undo' },
+  { keys: ['Ctrl', 'Y'],         description: 'Redo', context: 'or Ctrl+Shift+Z' },
+  { keys: ['Ctrl', 'S'],         description: 'Save project' },
+  { keys: ['Shift', 'Wheel'],    description: 'Zoom timeline' },
+  { keys: ['Shift', 'Drag'],     description: 'Set loop region on ruler' },
+  { keys: ['?'],                  description: 'Toggle this shortcuts list' },
 ]
 
 interface Props {

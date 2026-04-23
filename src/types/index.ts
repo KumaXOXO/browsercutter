@@ -82,7 +82,8 @@ export interface BpmConfig {
   outputUnit: 'seconds' | 'beats'
   selectedClipIds: ClipId[]
   onlyWholeClips?: boolean
-  gridStep?: number  // beat subdivisions: 0.25=¼, 0.5=½, 1=1, 2=2, 4=4 beats per mark
+  gridStep?: number       // beat subdivisions: 0.25=¼, 0.5=½, 1=1, 2=2, 4=4 beats per mark
+  importMode?: 'fixed' | 'full'  // 'fixed' = use segmentLength, 'full' = each clip at full duration
 }
 
 export interface TimelineTrack {

@@ -75,6 +75,9 @@ interface AppState {
   removeSegment: (id: SegmentId) => void
   removeSegments: (ids: string[]) => void
   updateSegment: (id: SegmentId, patch: Partial<Segment>) => void
+  updateSegmentLive: (id: SegmentId, patch: Partial<Segment>) => void
+  updateSegmentsLive: (patches: { id: string; patch: Partial<Segment> }[]) => void
+  pushHistory: () => void
   addSegments: (segments: Segment[]) => void
   replaceSegments: (segments: Segment[], targetTrackIndex?: number) => void
   splitSegment: (id: SegmentId, splitAt: number) => void
@@ -180,6 +183,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     selectedClipIds: [],
     onlyWholeClips: true,
     gridStep: 1,
+    importMode: 'fixed',
   },
 
   // ─── Timeline mode ───
@@ -220,6 +224,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   addClip: (clip) => set((s) => ({ clips: [...s.clips, clip] })),
   removeClip: (id) => set((s) => ({ clips: s.clips.filter((c) => c.id !== id) })),
   updateClip: (id, patch) => set((s) => ({ clips: s.clips.map((c) => c.id === id ? { ...c, ...patch } : c) })),
+
+  pushHistory: () => set((s) => ({ ...push(s) })),
+  updateSegmentLive: (id, patch) =>
+    set((s) => ({ segments: s.segments.map((seg) => seg.id === id ? { ...seg, ...patch } : seg) })),
+  updateSegmentsLive: (patches) =>
+    set((s) => {
+      const pMap = new Map(patches.map(({ id, patch }) => [id, patch]))
+      return { segments: s.segments.map((seg) => { const p = pMap.get(seg.id); return p ? { ...seg, ...p } : seg }) }
+    }),
 
   addSegment: (segment) => set((s) => ({ ...push(s), segments: [...s.segments, segment] })),
   removeSegment: (id) => set((s) => ({ ...push(s), segments: s.segments.filter((seg) => seg.id !== id) })),

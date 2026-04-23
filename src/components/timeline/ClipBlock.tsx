@@ -27,7 +27,7 @@ const TRANSITION_SYMBOLS: Record<string, string> = {
 }
 
 export default function ClipBlock({ segment, clip, zoom }: Props) {
-  const { selectedElement, setSelectedElement, updateSegment, splitSegment, addTransition, removeTransition, projectSettings, transitions, selectedSegmentIds, setSelectedSegmentIds, toggleSegmentSelection, segments, clips, timelineMode, resizeEnabled, playheadPosition } = useAppStore()
+  const { selectedElement, setSelectedElement, updateSegment, updateSegmentLive, updateSegmentsLive, pushHistory, splitSegment, addTransition, removeTransition, projectSettings, bpmConfig, transitions, selectedSegmentIds, setSelectedSegmentIds, toggleSegmentSelection, segments, clips, timelineMode, resizeEnabled, playheadPosition } = useAppStore()
   const showThumbnails = projectSettings.showClipThumbnails ?? false
   const transitionAfter = transitions.find((t) => t.beforeSegmentId === segment.id && t.type !== 'cut')
   const isSelected = selectedElement?.id === segment.id
@@ -114,6 +114,9 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
     setSelectedElement({ type: 'segment', id: segment.id })
     setSelectedSegmentIds([])
 
+    // Push one undo snapshot before drag begins (not inside mousemove to avoid flooding)
+    pushHistory()
+
     const trackContent = (e.currentTarget as HTMLElement).parentElement!
     const trackRect = trackContent.getBoundingClientRect()
     const scrollContainer = trackContent.closest('.overflow-auto') as HTMLElement | null
@@ -129,12 +132,12 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
 
     const handleMouseMove = (ev: MouseEvent) => {
       const curScroll = scrollContainer?.scrollLeft ?? 0
-      const { projectSettings: ps, bpmConfig } = useAppStore.getState()
-      const beatDuration = ps.snapToBeat ? 60 / Math.max(1, bpmConfig.bpm) : 0
+      const { projectSettings: ps, bpmConfig: bc } = useAppStore.getState()
+      const beatDuration = ps.snapToBeat ? 60 / Math.max(1, bc.bpm) : 0
+      // Snap to gridStep subdivisions (e.g. ¼ beat = beatDuration * 0.25)
+      const snapUnit = beatDuration > 0 ? beatDuration * (bc.gridStep ?? 1) : 0
       const rawStart = Math.max(0, (ev.clientX - trackRect.left + curScroll - offsetX) / px)
-      const newStart = beatDuration > 0
-        ? Math.round(rawStart / beatDuration) * beatDuration
-        : rawStart
+      const newStart = snapUnit > 0 ? Math.round(rawStart / snapUnit) * snapUnit : rawStart
       const primaryDelta = newStart - (startPositions[segment.id] ?? segment.startOnTimeline)
 
       // Detect target track under cursor for cross-timeline drag
@@ -145,20 +148,13 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
       document.dispatchEvent(new CustomEvent('bc:drag-track', { detail: targetTrackIndex !== null ? { trackIndex: targetTrackIndex, clipType: clip.type } : null }))
 
       if (multiIds.length > 1) {
-        multiIds.forEach((id) => {
-          const patch: Partial<typeof segment> = { startOnTimeline: Math.max(0, (startPositions[id] ?? 0) + primaryDelta) }
-          // Only move to target track if types are compatible
-          if (targetTrackIndex !== null && targetTrackType !== null) {
-            const segForId = segments.find((s) => s.id === id)
-            const clipForSeg = segForId ? clips.find((c) => c.id === segForId.clipId) : undefined
-            if (clipForSeg && ((clipForSeg.type === 'video' || clipForSeg.type === 'image') && targetTrackType === 'video')) {
-              patch.trackIndex = targetTrackIndex
-            } else if (clipForSeg && clipForSeg.type === 'audio' && targetTrackType === 'audio') {
-              patch.trackIndex = targetTrackIndex
-            }
-          }
-          updateSegment(id, patch)
-        })
+        // Multi-select: only change startOnTimeline, preserve each clip's original track.
+        // Prevents all clips from collapsing to one track on a simple click+move.
+        const patches = multiIds.map((id) => ({
+          id,
+          patch: { startOnTimeline: Math.max(0, (startPositions[id] ?? 0) + primaryDelta) } as Partial<Segment>,
+        }))
+        updateSegmentsLive(patches)
       } else {
         const patchSingle: Partial<typeof segment> = { startOnTimeline: newStart }
         if (targetTrackIndex !== null && targetTrackType !== null) {
@@ -168,7 +164,7 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
             patchSingle.trackIndex = targetTrackIndex
           }
         }
-        updateSegment(segment.id, patchSingle)
+        updateSegmentLive(segment.id, patchSingle)
       }
     }
     const handleMouseUp = () => {
@@ -185,16 +181,26 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
   const handleLeftTrimMouseDown = (e: React.MouseEvent) => {
     if (timelineMode !== 'selection' || !resizeEnabled) return
     e.stopPropagation()
+    pushHistory()
     const startX = e.clientX
     const initialInPoint = segRef.current.inPoint
     const initialStart = segRef.current.startOnTimeline
 
     const handleMouseMove = (ev: MouseEvent) => {
+      const { projectSettings: ps, bpmConfig: bc } = useAppStore.getState()
+      const beatDuration = ps.snapToBeat ? 60 / Math.max(1, bc.bpm) : 0
+      const snapUnit = beatDuration > 0 ? beatDuration * (bc.gridStep ?? 1) : 0
       const dSec = (ev.clientX - startX) / px
-      const newInPoint = Math.max(0, Math.min(segRef.current.outPoint - 0.1, initialInPoint + dSec))
+      let newInPoint = Math.max(0, Math.min(segRef.current.outPoint - 0.1, initialInPoint + dSec))
+      if (snapUnit > 0) {
+        // Snap startOnTimeline to grid, derive inPoint from that
+        const rawStart = Math.max(0, initialStart + (newInPoint - initialInPoint))
+        const snappedStart = Math.round(rawStart / snapUnit) * snapUnit
+        newInPoint = Math.max(0, Math.min(segRef.current.outPoint - 0.1, initialInPoint + (snappedStart - initialStart)))
+      }
       const delta = newInPoint - initialInPoint
       const newStart = Math.max(0, initialStart + delta)
-      updateSegment(segment.id, { inPoint: newInPoint, startOnTimeline: newStart })
+      updateSegmentLive(segment.id, { inPoint: newInPoint, startOnTimeline: newStart })
     }
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove)
@@ -208,14 +214,26 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
   const handleRightTrimMouseDown = (e: React.MouseEvent) => {
     if (timelineMode !== 'selection' || !resizeEnabled) return
     e.stopPropagation()
+    pushHistory()
     const startX = e.clientX
     const initialOutPoint = segRef.current.outPoint
 
     const handleMouseMove = (ev: MouseEvent) => {
+      const { projectSettings: ps, bpmConfig: bc } = useAppStore.getState()
+      const beatDuration = ps.snapToBeat ? 60 / Math.max(1, bc.bpm) : 0
+      const snapUnit = beatDuration > 0 ? beatDuration * (bc.gridStep ?? 1) : 0
       const dSec = (ev.clientX - startX) / px
       const maxOut = (clip.type === 'video' || clip.type === 'audio') ? clip.duration : Infinity
-      const newOutPoint = Math.max(segRef.current.inPoint + 0.1, Math.min(maxOut, initialOutPoint + dSec))
-      updateSegment(segment.id, { outPoint: newOutPoint })
+      let newOutPoint = Math.max(segRef.current.inPoint + 0.1, Math.min(maxOut, initialOutPoint + dSec))
+      if (snapUnit > 0) {
+        // Snap outPoint to the nearest grid position relative to segment start
+        const outOnTimeline = segRef.current.startOnTimeline + (newOutPoint - segRef.current.inPoint) / Math.max(0.01, segRef.current.speed ?? 1)
+        const snappedTimeline = Math.round(outOnTimeline / snapUnit) * snapUnit
+        newOutPoint = Math.max(segRef.current.inPoint + 0.1, Math.min(maxOut,
+          segRef.current.inPoint + (snappedTimeline - segRef.current.startOnTimeline) * Math.max(0.01, segRef.current.speed ?? 1)
+        ))
+      }
+      updateSegmentLive(segment.id, { outPoint: newOutPoint })
     }
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove)

@@ -114,21 +114,16 @@ export default function VideoPreview() {
     if (isPlaying) return
     const video = videoRef.current
     if (!video) return
-    // Clear src BEFORE revoking to prevent ERR_FILE_NOT_FOUND while browser still holds a reference
-    if (objectUrlRef.current) {
-      video.removeAttribute('src')
-      URL.revokeObjectURL(objectUrlRef.current)
-      objectUrlRef.current = null
-    }
     if (!activeClip?.file || activeClip.type === 'image') { video.load(); return }
     const url = URL.createObjectURL(activeClip.file)
     objectUrlRef.current = url
     video.src = url
-    // Only revoke in cleanup when NOT playing: during playback the RAF tick owns all URLs.
-    // Revoking while playing causes ERR_FILE_NOT_FOUND when the tick's video element tries
-    // to use the same URL on the next RAF frame.
+    // Cleanup: clear src and abort load BEFORE revoking so the browser never tries to fetch
+    // a revoked URL. Guards against isPlaying so the RAF tick keeps ownership during playback.
     return () => {
       if (useAppStore.getState().isPlaying) return
+      const vid = videoRef.current
+      if (vid) { vid.removeAttribute('src'); vid.load() }
       URL.revokeObjectURL(url)
       if (objectUrlRef.current === url) objectUrlRef.current = null
     }
@@ -146,12 +141,16 @@ export default function VideoPreview() {
   useEffect(() => {
     if (isPlaying) return
     const audio = audioRef.current
-    if (audioUrlRef.current) { URL.revokeObjectURL(audioUrlRef.current); audioUrlRef.current = null }
     if (!activeAudioClip?.file) { audio.removeAttribute('src'); audio.load(); return }
     const url = URL.createObjectURL(activeAudioClip.file)
     audioUrlRef.current = url
     audio.src = url
-    return () => { URL.revokeObjectURL(url); if (audioUrlRef.current === url) audioUrlRef.current = null }
+    return () => {
+      const aud = audioRef.current
+      if (aud) { aud.removeAttribute('src'); aud.load() }
+      URL.revokeObjectURL(url)
+      if (audioUrlRef.current === url) audioUrlRef.current = null
+    }
   }, [activeAudioClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Seek video when playhead moves while paused
