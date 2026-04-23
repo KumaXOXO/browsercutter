@@ -110,7 +110,9 @@ export async function loadProjectFromDir(): Promise<{ ok: boolean; data?: Record
         try {
           const filename = mediaPath.replace(/^media\//, '')
           const fileFh = await md.getFileHandle(filename)
-          const file = await fileFh.getFile()
+          const snap = await fileFh.getFile()
+          const buf = await snap.arrayBuffer()
+          const file = new File([buf], snap.name, { type: snap.type, lastModified: snap.lastModified })
           return { ...clip, file }
         } catch {
           return clip
