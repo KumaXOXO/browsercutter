@@ -56,19 +56,36 @@ export function useExport(): ExportState {
       return
     }
 
-    const unreadable: string[] = []
+    const notAllowed: string[] = []
+    const notReadable: string[] = []
+    const otherErrors: string[] = []
     for (const clip of clips) {
       if (!needed.has(clip.id)) continue
       if (!clip.file) continue
       try {
         const buffer = await clip.file.arrayBuffer()
         clipData[clip.id] = { buffer, name: clip.name }
-      } catch {
-        unreadable.push(clip.name)
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'NotAllowedError') notAllowed.push(clip.name)
+        else if (e instanceof DOMException && e.name === 'NotReadableError') notReadable.push(clip.name)
+        else otherErrors.push(clip.name)
       }
     }
-    if (unreadable.length > 0) {
-      setErrorMsg(`Cannot read ${unreadable.length} file(s): ${unreadable.slice(0, 3).join(', ')}${unreadable.length > 3 ? '…' : ''}. Re-import them in the Media tab and try again.`)
+    if (notAllowed.length > 0) {
+      const names = notAllowed.slice(0, 3).join(', ') + (notAllowed.length > 3 ? '…' : '')
+      setErrorMsg(`Files no longer readable — close and reload this project folder: ${names}`)
+      setStatus('error')
+      return
+    }
+    if (notReadable.length > 0) {
+      const names = notReadable.slice(0, 3).join(', ') + (notReadable.length > 3 ? '…' : '')
+      setErrorMsg(`Files deleted or moved — re-import in the Media tab: ${names}`)
+      setStatus('error')
+      return
+    }
+    if (otherErrors.length > 0) {
+      const names = otherErrors.slice(0, 3).join(', ') + (otherErrors.length > 3 ? '…' : '')
+      setErrorMsg(`Cannot read ${otherErrors.length} file(s): ${names}. Re-import them in the Media tab and try again.`)
       setStatus('error')
       return
     }
