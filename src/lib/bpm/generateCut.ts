@@ -1,6 +1,6 @@
 // src/lib/bpm/generateCut.ts
 import { v4 as uuidv4 } from 'uuid'
-import type { Clip, Segment, BpmConfig } from '../../types'
+import type { Clip, Segment, BpmConfig, BpmMode } from '../../types'
 
 export function generateCut(clips: Clip[], config: BpmConfig, targetTrackIndex = 0, startOffset = 0): Segment[] {
   const { bpm, mode, segmentLength, outputDuration, outputUnit, selectedClipIds, onlyWholeClips, importMode } = config

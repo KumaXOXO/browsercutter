@@ -27,7 +27,7 @@ const TRANSITION_SYMBOLS: Record<string, string> = {
 }
 
 export default function ClipBlock({ segment, clip, zoom }: Props) {
-  const { selectedElement, setSelectedElement, updateSegment, updateSegmentLive, updateSegmentsLive, pushHistory, splitSegment, addTransition, removeTransition, projectSettings, bpmConfig, transitions, selectedSegmentIds, setSelectedSegmentIds, toggleSegmentSelection, segments, clips, timelineMode, resizeEnabled, playheadPosition } = useAppStore()
+  const { selectedElement, setSelectedElement, updateSegment, updateSegmentLive, updateSegmentsLive, pushHistory, splitSegment, addTransition, removeTransition, projectSettings, transitions, selectedSegmentIds, setSelectedSegmentIds, toggleSegmentSelection, segments, timelineMode, resizeEnabled, playheadPosition } = useAppStore()
   const showThumbnails = projectSettings.showClipThumbnails ?? false
   const transitionAfter = transitions.find((t) => t.beforeSegmentId === segment.id && t.type !== 'cut')
   const isSelected = selectedElement?.id === segment.id

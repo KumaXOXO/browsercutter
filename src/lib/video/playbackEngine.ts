@@ -402,6 +402,12 @@ export function startVideoTick(params: VideoTickParams): void {
       }
     }
 
+    // Compute the seek time into nextSeg at swap moment.
+    // If nextSeg started before segEnd (overlapping lower-priority segment), seek to the right position.
+    const nextSeekTime = nextSeg && nextSeg.startOnTimeline < segEnd
+      ? nextSeg.inPoint + (segEnd - nextSeg.startOnTimeline) * Math.max(0.01, nextSeg.speed ?? 1)
+      : nextSeg?.inPoint ?? 0
+
     // Non-transition preload: when within 1.5 s of clip end and a different clip follows,
     // load it into the invisible transitionVideoRef so the browser buffers it ahead of time.
     // This reduces the black flash when the main video's src is changed at swap time.
@@ -433,12 +439,6 @@ export function startVideoTick(params: VideoTickParams): void {
 
     // For transitions to adjacent segments, preload early; for gaps, wait to the very end.
     const swapThreshold = hasGap ? 0.033 : Math.max(0.15, 0.15 * (seg.speed ?? 1))
-
-    // Compute the seek time into nextSeg at swap moment.
-    // If nextSeg started before segEnd (overlapping lower-priority segment), seek to the right position.
-    const nextSeekTime = nextSeg && nextSeg.startOnTimeline < segEnd
-      ? nextSeg.inPoint + (segEnd - nextSeg.startOnTimeline) * Math.max(0.01, nextSeg.speed ?? 1)
-      : nextSeg?.inPoint ?? 0
 
     if (rawTime >= seg.outPoint - swapThreshold) {
       if (nextSeg) {
