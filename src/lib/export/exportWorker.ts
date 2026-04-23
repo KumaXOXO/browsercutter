@@ -85,57 +85,32 @@ async function runExport(req: ExportRequest) {
   const quality = req.quality ?? 'good'
   const outputFile = `output.${format}`
 
-  const needsFilterComplex =
-    req.transitions.some((t) => t.type !== 'cut') ||
-    v1Segs.some((s) => s.effects && s.effects.length > 0) ||
-    v1Segs.some((s) => s.volume != null && s.volume !== 1.0) ||
-    v1Segs.some((s) => s.speed != null && s.speed !== 1.0) ||
-    req.adjustmentLayers.some((l) => l.effects.length > 0)
-
   ffmpeg.on('progress', ({ progress }) => {
     post({ type: 'progress', value: 0.25 + progress * 0.7, label: 'Encoding...' })
   })
 
   post({ type: 'progress', value: 0.25, label: 'Encoding video...' })
 
-  if (!needsFilterComplex) {
-    // Tier 1: concat demuxer — fast path, no filters
-    const concatLines: string[] = []
-    for (const seg of v1Segs) {
-      const cd = req.clipData[seg.clipId]
-      const ext = cd.name.split('.').pop()?.toLowerCase() ?? 'mp4'
-      concatLines.push(`file 'clip_${seg.clipId}.${ext}'`)
-      concatLines.push(`inpoint ${seg.inPoint.toFixed(6)}`)
-      concatLines.push(`outpoint ${seg.outPoint.toFixed(6)}`)
-    }
-    await ffmpeg.writeFile('concat.txt', concatLines.join('\n'))
-
-    await ffmpeg.exec([
-      '-f', 'concat', '-safe', '0', '-i', 'concat.txt',
-      ...buildEncodeArgs(format, quality, req.fps, width, height),
-      '-y', outputFile,
-    ])
-  } else {
-    // Tier 4: filter_complex — effects, transitions, speed, volume
-    const inputs: string[] = []
-    for (const seg of v1Segs) {
-      const cd = req.clipData[seg.clipId]
-      const ext = cd.name.split('.').pop()?.toLowerCase() ?? 'mp4'
-      inputs.push('-i', `clip_${seg.clipId}.${ext}`)
-    }
-
-    const { filterComplex, videoOut, audioOut } = buildFilterComplex(
-      v1Segs, req.transitions, req.adjustmentLayers, width, height,
-    )
-
-    await ffmpeg.exec([
-      ...inputs,
-      '-filter_complex', filterComplex,
-      '-map', `[${videoOut}]`, '-map', `[${audioOut}]`,
-      ...buildEncodeArgs(format, quality, req.fps),
-      '-y', outputFile,
-    ])
+  // Always use filter_complex so each segment gets setpts=PTS-STARTPTS,
+  // preventing timestamp discontinuities when segments are non-contiguous in the source file.
+  const inputs: string[] = []
+  for (const seg of v1Segs) {
+    const cd = req.clipData[seg.clipId]
+    const ext = cd.name.split('.').pop()?.toLowerCase() ?? 'mp4'
+    inputs.push('-i', `clip_${seg.clipId}.${ext}`)
   }
+
+  const { filterComplex, videoOut, audioOut } = buildFilterComplex(
+    v1Segs, req.transitions, req.adjustmentLayers, width, height,
+  )
+
+  await ffmpeg.exec([
+    ...inputs,
+    '-filter_complex', filterComplex,
+    '-map', `[${videoOut}]`, '-map', `[${audioOut}]`,
+    ...buildEncodeArgs(format, quality, req.fps),
+    '-y', outputFile,
+  ])
 
   post({ type: 'progress', value: 0.97, label: 'Reading output...' })
 

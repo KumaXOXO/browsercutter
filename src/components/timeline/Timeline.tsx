@@ -63,7 +63,7 @@ export default function Timeline({ height = 205, isDragging = false }: Props) {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       const store = useAppStore.getState()
-      const { selectedSegmentIds, selectedElement, segments, setSelectedSegmentIds, setSelectedElement, removeSegments } = store
+      const { selectedSegmentIds, selectedElement, segments, setSelectedSegmentIds, setSelectedElement, removeSegments, removeTextOverlay, removeAdjustmentLayer } = store
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const toDelete = new Set(selectedSegmentIds)
@@ -75,9 +75,21 @@ export default function Timeline({ height = 205, isDragging = false }: Props) {
           setSelectedElement(null)
           return
         }
+        if (selectedElement?.type === 'text') {
+          e.preventDefault()
+          removeTextOverlay(selectedElement.id)
+          setSelectedElement(null)
+          return
+        }
+        if (selectedElement?.type === 'adjustment') {
+          e.preventDefault()
+          removeAdjustmentLayer(selectedElement.id)
+          setSelectedElement(null)
+          return
+        }
       }
 
-      // Ctrl+A: select all segments in all tracks
+      // Ctrl+A: select all segments in all tracks (text/adjustment stay independently selected)
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'a') {
         e.preventDefault()
         setSelectedSegmentIds(segments.map((s) => s.id))
@@ -95,12 +107,15 @@ export default function Timeline({ height = 205, isDragging = false }: Props) {
         return
       }
 
-      // Ctrl+Shift+A: select all clips in all video tracks
+      // Ctrl+Shift+A: select all segments whose track type matches current selection, else all video segments
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
         e.preventDefault()
         const { tracks: allTracks } = store
-        const videoIdx = new Set(allTracks.filter((t) => t.type === 'video').map((t) => t.trackIndex))
-        setSelectedSegmentIds(segments.filter((s) => videoIdx.has(s.trackIndex)).map((s) => s.id))
+        const anchorSeg = segments.find((s) => s.id === (selectedElement?.id ?? selectedSegmentIds[0]))
+        const anchorTrack = anchorSeg ? allTracks.find((t) => t.trackIndex === anchorSeg.trackIndex) : null
+        const matchType = anchorTrack?.type ?? 'video'
+        const matchIdx = new Set(allTracks.filter((t) => t.type === matchType).map((t) => t.trackIndex))
+        setSelectedSegmentIds(segments.filter((s) => matchIdx.has(s.trackIndex)).map((s) => s.id))
         return
       }
 
