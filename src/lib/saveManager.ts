@@ -40,17 +40,17 @@ export async function saveProjectFile(): Promise<{ ok: boolean; reason?: string;
       const serializedClips = await Promise.all(clips.map(async ({ file, ...meta }) => {
         if (!file) return meta
         try {
-          const buf = await file.arrayBuffer()
           const fh = await mediaDir.getFileHandle(file.name, { create: true })
           const writable = await fh.createWritable()
-          await writable.write(buf)
+          // Write the Blob directly — no arrayBuffer() needed, avoids OOM on large files.
+          await writable.write(file)
           await writable.close()
-          // Replace in-memory File with a heap-backed copy so export works even if
-          // the original source file is later moved or deleted.
-          const heapFile = new File([buf], file.name, { type: file.type, lastModified: file.lastModified })
-          useAppStore.getState().updateClip(meta.id as string, { file: heapFile })
+          // Point the store at the project-directory copy so it survives source deletion.
+          const savedFile = await fh.getFile()
+          useAppStore.getState().updateClip(meta.id as string, { file: savedFile })
           return { ...meta, mediaPath: `media/${file.name}` }
-        } catch {
+        } catch (e) {
+          if (import.meta.env.DEV) console.error('[saveManager] failed to copy', file.name, e)
           skippedFiles.push(file.name)
           return meta
         }
@@ -117,9 +117,8 @@ export async function loadProjectFromDir(): Promise<{ ok: boolean; data?: Record
         try {
           const filename = mediaPath.replace(/^media\//, '')
           const fileFh = await md.getFileHandle(filename)
-          const snap = await fileFh.getFile()
-          const buf = await snap.arrayBuffer()
-          const file = new File([buf], snap.name, { type: snap.type, lastModified: snap.lastModified })
+          // getFile() returns a filesystem-backed File — no need to buffer into RAM.
+          const file = await fileFh.getFile()
           return { ...clip, file }
         } catch {
           return clip
