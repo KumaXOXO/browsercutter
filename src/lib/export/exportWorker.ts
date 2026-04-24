@@ -88,6 +88,8 @@ async function runExport(req: ExportRequest) {
   const quality = req.quality ?? 'good'
   const outputFile = `output.${format}`
 
+  let lastLog = ''
+  ffmpeg.on('log', ({ message }) => { lastLog = message })
   ffmpeg.on('progress', ({ progress }) => {
     post({ type: 'progress', value: 0.25 + progress * 0.7, label: 'Encoding...' })
   })
@@ -107,13 +109,28 @@ async function runExport(req: ExportRequest) {
     v1Segs, req.transitions, req.adjustmentLayers, width, height,
   )
 
-  await ffmpeg.exec([
+  let exitCode = await ffmpeg.exec([
     ...inputs,
     '-filter_complex', filterComplex,
     '-map', `[${videoOut}]`, '-map', `[${audioOut}]`,
     ...buildEncodeArgs(format, quality, req.fps),
     '-y', outputFile,
   ])
+
+  // If encoding failed (e.g. clip without audio stream), retry without audio mapping
+  if (exitCode !== 0) {
+    exitCode = await ffmpeg.exec([
+      ...inputs,
+      '-filter_complex', filterComplex,
+      '-map', `[${videoOut}]`, '-an',
+      ...buildEncodeArgs(format, quality, req.fps),
+      '-y', outputFile,
+    ])
+  }
+
+  if (exitCode !== 0) {
+    throw new Error(`Export failed: ${lastLog || 'FFmpeg exited with code ' + exitCode}`)
+  }
 
   post({ type: 'progress', value: 0.97, label: 'Reading output...' })
 

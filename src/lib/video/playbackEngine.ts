@@ -142,6 +142,9 @@ export function startVideoTick(params: VideoTickParams): void {
   let preloadPending = false
   let preloadForSegId: string | null = null
 
+  // --- Element-swap state: TV is the visible display while main video buffers ---
+  let preloadSwapActive = false
+
   // Start in gap mode if the caller detected the playhead is between segments
   if (params.initialGapTarget) {
     inGap = true
@@ -227,6 +230,40 @@ export function startVideoTick(params: VideoTickParams): void {
     }
 
     // ────────────────────────────────────────────────────────────────
+    // Preload swap: TV drives display while main video buffers
+    // ────────────────────────────────────────────────────────────────
+    if (preloadSwapActive) {
+      const tv = transitionVideoRef.current
+      const swapSeg = activeSegRef.current
+      if (!tv || !swapSeg || !video) {
+        preloadSwapActive = false
+      } else if (video.readyState >= 3) {
+        video.currentTime = tv.currentTime
+        video.style.opacity = '1'
+        playAbortRef.current = { cancelled: false }
+        const abort = playAbortRef.current
+        video.play().catch((err: unknown) => {
+          if (abort.cancelled) return
+          if (err instanceof DOMException && err.name === 'AbortError') return
+          setIsPlaying(false)
+        })
+        cancelPlayRef.current = () => { abort.cancelled = true }
+        tv.pause()
+        tv.removeAttribute('src')
+        tv.style.display = 'none'
+        tv.style.opacity = '0'
+        transitionUrlRef.current = null
+        preloadSwapActive = false
+      } else {
+        const tvTime = tv.currentTime
+        const pos = swapSeg.startOnTimeline + (tvTime - swapSeg.inPoint) / Math.max(0.01, swapSeg.speed ?? 1)
+        setPlayheadPosition(pos)
+        rafRef.current = requestAnimationFrame(tick)
+        return
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────
     // Normal mode
     // ────────────────────────────────────────────────────────────────
     const seg = activeSegRef.current
@@ -236,11 +273,16 @@ export function startVideoTick(params: VideoTickParams): void {
     const vIdx = videoIndices(tracksRef.current)
     const aIdx = audioIndices(tracksRef.current)
 
-    // Stall detection: ignore if video is actively seeking to avoid false positives
+    // Stall detection: only count when video has data (readyState >= 2) and isn't seeking.
+    // Large MP4s can take >1s to seek — counting stalls before data is ready caused
+    // premature playback stops. Re-seek at 60 frames, give up at 180.
     if (rawTime < seg.inPoint) {
-      if (!video.paused && !video.seeking) {
+      if (!video.paused && !video.seeking && video.readyState >= 2) {
         stallCountRef.current += 1
-        if (stallCountRef.current > 60) {
+        if (stallCountRef.current === 60) {
+          video.currentTime = seg.inPoint
+        }
+        if (stallCountRef.current > 180) {
           stallCountRef.current = 0
           setIsPlaying(false)
           return
@@ -528,33 +570,40 @@ export function startVideoTick(params: VideoTickParams): void {
               })
               cancelPlayRef.current = () => { abort.cancelled = true }
             } else {
-              // Use preloaded URL if available (already buffered by transitionVideoRef).
-              // Assign video.src BEFORE clearing TV so the browser can reuse the decoded
-              // data — clearing TV first releases the cache, causing a black flash.
               const usePreload = preloadPending && preloadForSegId === nextSeg.id && transitionUrlRef.current
-              const swapUrl = usePreload
-                ? transitionUrlRef.current!
-                : URL.createObjectURL(nextClip.file)
-              const prevUrl5 = objectUrlRef.current
-              objectUrlRef.current = swapUrl
-              video.src = swapUrl
-              if (prevUrl5) URL.revokeObjectURL(prevUrl5)
-              video.currentTime = nextSeekTime
-              video.volume = Math.min(1, (nextSeg.volume ?? 1) * masterVolumeRef.current)
-              video.playbackRate = nextSeg.speed ?? 1
-              video.muted = nextSeg.muted ?? false
-              playAbortRef.current = { cancelled: false }
-              cancelPlayRef.current = playWhenReady(video, () => setIsPlaying(false), playAbortRef.current)
-              if (usePreload) {
+              if (usePreload && transitionVideoRef.current) {
+                // Element swap: show the already-decoded TV immediately (no black flash),
+                // load main video in background, swap back when ready.
+                const tv = transitionVideoRef.current
+                tv.style.opacity = '1'
+                tv.volume = Math.min(1, (nextSeg.volume ?? 1) * masterVolumeRef.current)
+                tv.muted = nextSeg.muted ?? false
+                tv.playbackRate = nextSeg.speed ?? 1
+                tv.play().catch(() => {})
+                video.style.opacity = '0'
+                const prevUrl5 = objectUrlRef.current
+                objectUrlRef.current = transitionUrlRef.current!
+                video.src = transitionUrlRef.current!
+                if (prevUrl5) URL.revokeObjectURL(prevUrl5)
+                video.currentTime = nextSeekTime
+                video.volume = tv.volume
+                video.playbackRate = tv.playbackRate
+                video.muted = tv.muted
                 preloadPending = false
                 preloadForSegId = null
-                transitionUrlRef.current = null
-                if (transitionVideoRef.current) {
-                  transitionVideoRef.current.pause()
-                  transitionVideoRef.current.src = ''
-                  transitionVideoRef.current.style.display = 'none'
-                  transitionVideoRef.current.style.opacity = '0'
-                }
+                preloadSwapActive = true
+              } else {
+                const swapUrl = URL.createObjectURL(nextClip.file)
+                const prevUrl5 = objectUrlRef.current
+                objectUrlRef.current = swapUrl
+                video.src = swapUrl
+                if (prevUrl5) URL.revokeObjectURL(prevUrl5)
+                video.currentTime = nextSeekTime
+                video.volume = Math.min(1, (nextSeg.volume ?? 1) * masterVolumeRef.current)
+                video.playbackRate = nextSeg.speed ?? 1
+                video.muted = nextSeg.muted ?? false
+                playAbortRef.current = { cancelled: false }
+                cancelPlayRef.current = playWhenReady(video, () => setIsPlaying(false), playAbortRef.current)
               }
             }
             activeSegRef.current = nextSeg
