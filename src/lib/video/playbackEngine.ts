@@ -433,7 +433,6 @@ export function startVideoTick(params: VideoTickParams): void {
         tv.currentTime = nextSeekTime
         tv.volume = 0
         tv.playbackRate = nextSeg.speed ?? 1
-        tv.load()
       }
     }
 
@@ -530,11 +529,22 @@ export function startVideoTick(params: VideoTickParams): void {
               cancelPlayRef.current = () => { abort.cancelled = true }
             } else {
               // Use preloaded URL if available (already buffered by transitionVideoRef).
-              // Reusing an already-loaded blob URL avoids most of the black flash.
+              // Assign video.src BEFORE clearing TV so the browser can reuse the decoded
+              // data — clearing TV first releases the cache, causing a black flash.
               const usePreload = preloadPending && preloadForSegId === nextSeg.id && transitionUrlRef.current
               const swapUrl = usePreload
                 ? transitionUrlRef.current!
                 : URL.createObjectURL(nextClip.file)
+              const prevUrl5 = objectUrlRef.current
+              objectUrlRef.current = swapUrl
+              video.src = swapUrl
+              if (prevUrl5) URL.revokeObjectURL(prevUrl5)
+              video.currentTime = nextSeekTime
+              video.volume = Math.min(1, (nextSeg.volume ?? 1) * masterVolumeRef.current)
+              video.playbackRate = nextSeg.speed ?? 1
+              video.muted = nextSeg.muted ?? false
+              playAbortRef.current = { cancelled: false }
+              cancelPlayRef.current = playWhenReady(video, () => setIsPlaying(false), playAbortRef.current)
               if (usePreload) {
                 preloadPending = false
                 preloadForSegId = null
@@ -546,16 +556,6 @@ export function startVideoTick(params: VideoTickParams): void {
                   transitionVideoRef.current.style.opacity = '0'
                 }
               }
-              const prevUrl5 = objectUrlRef.current
-              objectUrlRef.current = swapUrl
-              video.src = swapUrl
-              if (prevUrl5) URL.revokeObjectURL(prevUrl5)
-              video.currentTime = nextSeekTime
-              video.volume = Math.min(1, (nextSeg.volume ?? 1) * masterVolumeRef.current)
-              video.playbackRate = nextSeg.speed ?? 1
-              video.muted = nextSeg.muted ?? false
-              playAbortRef.current = { cancelled: false }
-              cancelPlayRef.current = playWhenReady(video, () => setIsPlaying(false), playAbortRef.current)
             }
             activeSegRef.current = nextSeg
           } else {

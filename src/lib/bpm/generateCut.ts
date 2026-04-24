@@ -23,6 +23,13 @@ export function generateCut(clips: Clip[], config: BpmConfig, targetTrackIndex =
 
   if ((onlyWholeClips ?? true) && segDuration > 0.001) {
     segs = segs.filter((s) => (s.outPoint - s.inPoint) >= segDuration * 0.99)
+    // Re-sequence to close gaps left by removed partial end-of-clip segments
+    let cursor = 0
+    segs = segs.map((s) => {
+      const reseq = { ...s, startOnTimeline: cursor }
+      cursor += s.outPoint - s.inPoint
+      return reseq
+    })
   }
 
   return segs.map((s) => ({

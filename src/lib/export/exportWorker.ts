@@ -50,15 +50,7 @@ self.onmessage = async (e: MessageEvent<ExportRequest>) => {
 }
 
 async function runExport(req: ExportRequest) {
-  post({ type: 'progress', value: 0.01, label: 'Reading media files...' })
-
-  // Read file buffers inside the worker — keeps the main thread responsive for large files.
-  const clipData: Record<string, { buffer: ArrayBuffer; name: string }> = {}
-  for (const [id, { file, name }] of Object.entries(req.clipFiles)) {
-    clipData[id] = { buffer: await file.arrayBuffer(), name }
-  }
-
-  post({ type: 'progress', value: 0.05, label: 'Loading FFmpeg...' })
+  post({ type: 'progress', value: 0.01, label: 'Loading FFmpeg...' })
 
   const BASE = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm'
   await ffmpeg.load({
@@ -66,7 +58,7 @@ async function runExport(req: ExportRequest) {
     wasmURL: await toBlobURL(`${BASE}/ffmpeg-core.wasm`, 'application/wasm'),
   })
 
-  post({ type: 'progress', value: 0.1, label: 'Writing clips...' })
+  post({ type: 'progress', value: 0.05, label: 'Writing clips...' })
 
   const v1Segs = req.segments
     .filter((s) => s.trackIndex === 0)
@@ -74,14 +66,17 @@ async function runExport(req: ExportRequest) {
 
   if (v1Segs.length === 0) throw new Error('No video clips on the timeline.')
 
+  // Write clips one at a time so only one ArrayBuffer lives in JS heap at once.
+  // Pre-loading all buffers simultaneously caused ErrnoError on large projects.
   const writtenFiles = new Set<string>()
   for (const seg of v1Segs) {
-    const cd = clipData[seg.clipId]
+    const cd = req.clipFiles[seg.clipId]
     if (!cd) throw new Error(`Missing clip data for segment ${seg.id}`)
     const ext = cd.name.split('.').pop()?.toLowerCase() ?? 'mp4'
     const fname = `clip_${seg.clipId}.${ext}`
     if (!writtenFiles.has(fname)) {
-      await ffmpeg.writeFile(fname, new Uint8Array(cd.buffer))
+      const buf = await cd.file.arrayBuffer()
+      await ffmpeg.writeFile(fname, new Uint8Array(buf))
       writtenFiles.add(fname)
     }
   }
@@ -103,7 +98,7 @@ async function runExport(req: ExportRequest) {
   // preventing timestamp discontinuities when segments are non-contiguous in the source file.
   const inputs: string[] = []
   for (const seg of v1Segs) {
-    const cd = clipData[seg.clipId]
+    const cd = req.clipFiles[seg.clipId]
     const ext = cd.name.split('.').pop()?.toLowerCase() ?? 'mp4'
     inputs.push('-i', `clip_${seg.clipId}.${ext}`)
   }
