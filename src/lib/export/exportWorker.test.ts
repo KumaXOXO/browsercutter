@@ -112,4 +112,51 @@ describe('buildFilterComplex', () => {
     const { filterComplex } = buildFilterComplex(segs, trans, [], W, H)
     expect(filterComplex).toContain('xfade=transition=circleopen')
   })
+
+  it('segInputIdx: shared input uses split/asplit', () => {
+    const segs = [
+      makeSeg('s0', 'c0', 0, 2),
+      makeSeg('s1', 'c0', 2, 4),
+      makeSeg('s2', 'c0', 4, 6),
+    ]
+    // All 3 segments share input 0
+    const { filterComplex } = buildFilterComplex(segs, [], [], W, H, [0, 0, 0])
+    expect(filterComplex).toContain('[0:v]split=3[vin0_0][vin0_1][vin0_2]')
+    expect(filterComplex).toContain('[0:a]asplit=3[ain0_0][ain0_1][ain0_2]')
+    expect(filterComplex).toContain('[vin0_0]')
+    expect(filterComplex).toContain('[vin0_1]')
+    expect(filterComplex).toContain('[vin0_2]')
+    expect(filterComplex).not.toContain('[0:v]trim')
+    expect(filterComplex).not.toContain('[1:v]')
+  })
+
+  it('segInputIdx: unique inputs skip split', () => {
+    const segs = [makeSeg('s0', 'c0', 0, 5), makeSeg('s1', 'c1', 0, 4)]
+    const { filterComplex } = buildFilterComplex(segs, [], [], W, H, [0, 1])
+    expect(filterComplex).not.toContain('split=')
+    expect(filterComplex).toContain('[0:v]')
+    expect(filterComplex).toContain('[1:v]')
+  })
+
+  it('segInputIdx: mixed shared and unique inputs', () => {
+    const segs = [
+      makeSeg('s0', 'c0', 0, 3),
+      makeSeg('s1', 'c1', 0, 3),
+      makeSeg('s2', 'c0', 3, 6),
+    ]
+    // input 0 shared by s0 and s2, input 1 unique to s1
+    const { filterComplex } = buildFilterComplex(segs, [], [], W, H, [0, 1, 0])
+    expect(filterComplex).toContain('[0:v]split=2[vin0_0][vin0_1]')
+    expect(filterComplex).toContain('[0:a]asplit=2[ain0_0][ain0_1]')
+    expect(filterComplex).toContain('[1:v]')
+    expect(filterComplex).not.toContain('split=2[vin1')
+  })
+
+  it('backward compat: no segInputIdx uses segment-index labels', () => {
+    const segs = [makeSeg('s0', 'c0', 0, 5), makeSeg('s1', 'c1', 0, 4)]
+    const { filterComplex } = buildFilterComplex(segs, [], [], W, H)
+    expect(filterComplex).toContain('[0:v]')
+    expect(filterComplex).toContain('[1:v]')
+    expect(filterComplex).not.toContain('split=')
+  })
 })

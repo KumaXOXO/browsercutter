@@ -52,8 +52,50 @@ export function buildFilterComplex(
   adjustmentLayers: AdjustmentLayer[],
   width: number,
   height: number,
+  segInputIdx?: number[],
 ): { filterComplex: string; videoOut: string; audioOut: string } {
   const lines: string[] = []
+
+  // Build per-segment input labels; when segInputIdx maps multiple segments to
+  // the same FFmpeg input, generate split/asplit so each reference is unique.
+  const segVLabel: string[] = []
+  const segALabel: string[] = []
+
+  if (segInputIdx) {
+    const usageCount = new Map<number, number>()
+    for (const idx of segInputIdx) usageCount.set(idx, (usageCount.get(idx) ?? 0) + 1)
+
+    for (const [inputIdx, count] of usageCount) {
+      if (count > 1) {
+        const vOut = Array.from({ length: count }, (_, k) => `[vin${inputIdx}_${k}]`).join('')
+        const aOut = Array.from({ length: count }, (_, k) => `[ain${inputIdx}_${k}]`).join('')
+        lines.push(`[${inputIdx}:v]split=${count}${vOut}`)
+        lines.push(`[${inputIdx}:a]asplit=${count}${aOut}`)
+      }
+    }
+
+    const usageCounter = new Map<number, number>()
+    for (const idx of usageCount.keys()) usageCounter.set(idx, 0)
+
+    for (let i = 0; i < v1Segs.length; i++) {
+      const inputIdx = segInputIdx[i]
+      const count = usageCount.get(inputIdx) ?? 1
+      if (count > 1) {
+        const k = usageCounter.get(inputIdx)!
+        segVLabel.push(`vin${inputIdx}_${k}`)
+        segALabel.push(`ain${inputIdx}_${k}`)
+        usageCounter.set(inputIdx, k + 1)
+      } else {
+        segVLabel.push(`${inputIdx}:v`)
+        segALabel.push(`${inputIdx}:a`)
+      }
+    }
+  } else {
+    for (let i = 0; i < v1Segs.length; i++) {
+      segVLabel.push(`${i}:v`)
+      segALabel.push(`${i}:a`)
+    }
+  }
 
   // Per-segment filters
   const segDurs: number[] = []
@@ -71,7 +113,7 @@ export function buildFilterComplex(
     ]
     const vfx = buildFFmpegFilter(seg.effects ?? [])
     if (vfx) vParts.push(vfx)
-    lines.push(`[${i}:v]${vParts.join(',')}[vs${i}]`)
+    lines.push(`[${segVLabel[i]}]${vParts.join(',')}[vs${i}]`)
 
     // Audio: trim → reset pts → speed → volume
     const aParts = [
@@ -81,7 +123,7 @@ export function buildFilterComplex(
     if (speed !== 1.0) aParts.push(buildAtempoChain(speed))
     const vol = seg.volume
     if (vol != null && vol !== 1.0) aParts.push(`volume=${vol.toFixed(4)}`)
-    lines.push(`[${i}:a]${aParts.join(',')}[as${i}]`)
+    lines.push(`[${segALabel[i]}]${aParts.join(',')}[as${i}]`)
   }
 
   // Build transition lookup keyed by beforeSegmentId

@@ -123,6 +123,10 @@ export interface VideoTickParams {
 
 const OVERLAY_TRANSITIONS: TransitionType[] = ['dissolve', 'wipe', 'slide', 'zoom']
 
+function deferRevokeUrl(url: string | null) {
+  if (url) setTimeout(() => deferRevokeUrl(url), 500)
+}
+
 export function startVideoTick(params: VideoTickParams): void {
   const {
     videoRef, audioRef, segmentsRef, clipsRef, tracksRef, activeSegRef,
@@ -177,7 +181,7 @@ export function startVideoTick(params: VideoTickParams): void {
             const url = URL.createObjectURL(loopClip.file)
             objectUrlRef.current = url
             video.src = url
-            if (prevUrl) URL.revokeObjectURL(prevUrl)
+            if (prevUrl) deferRevokeUrl(prevUrl)
             video.currentTime = loopStartSeg.inPoint + (loop.start - loopStartSeg.startOnTimeline) * Math.max(0.01, loopStartSeg.speed ?? 1)
             video.volume = Math.min(1, (loopStartSeg.volume ?? 1) * masterVolumeRef.current)
             video.playbackRate = loopStartSeg.speed ?? 1
@@ -213,7 +217,7 @@ export function startVideoTick(params: VideoTickParams): void {
         const url = URL.createObjectURL(nextClip.file)
         objectUrlRef.current = url
         video.src = url
-        if (prevUrl2) URL.revokeObjectURL(prevUrl2)
+        if (prevUrl2) deferRevokeUrl(prevUrl2)
         video.currentTime = ns.inPoint
         video.volume = Math.min(1, (ns.volume ?? 1) * masterVolumeRef.current)
         video.playbackRate = ns.speed ?? 1
@@ -256,10 +260,23 @@ export function startVideoTick(params: VideoTickParams): void {
         preloadSwapActive = false
       } else {
         const tvTime = tv.currentTime
-        const pos = swapSeg.startOnTimeline + (tvTime - swapSeg.inPoint) / Math.max(0.01, swapSeg.speed ?? 1)
-        setPlayheadPosition(pos)
-        rafRef.current = requestAnimationFrame(tick)
-        return
+        if (tvTime >= swapSeg.outPoint - 0.1) {
+          video.currentTime = tvTime
+          video.style.opacity = '1'
+          playAbortRef.current = { cancelled: false }
+          cancelPlayRef.current = playWhenReady(video, () => setIsPlaying(false), playAbortRef.current)
+          tv.pause()
+          tv.removeAttribute('src')
+          tv.style.display = 'none'
+          tv.style.opacity = '0'
+          transitionUrlRef.current = null
+          preloadSwapActive = false
+        } else {
+          const pos = swapSeg.startOnTimeline + (tvTime - swapSeg.inPoint) / Math.max(0.01, swapSeg.speed ?? 1)
+          setPlayheadPosition(pos)
+          rafRef.current = requestAnimationFrame(tick)
+          return
+        }
       }
     }
 
@@ -305,7 +322,7 @@ export function startVideoTick(params: VideoTickParams): void {
       cancelPlayRef.current()
       // Clear any in-progress transition overlay
       if (transitionUrlRef.current && transitionVideoRef.current) {
-        URL.revokeObjectURL(transitionUrlRef.current)
+        deferRevokeUrl(transitionUrlRef.current)
         transitionUrlRef.current = null
         transitionVideoRef.current.pause()
         transitionVideoRef.current.src = ''
@@ -335,7 +352,7 @@ export function startVideoTick(params: VideoTickParams): void {
         objectUrlRef.current = url
         video.style.opacity = '1'
         video.src = url
-        if (prevUrl3) URL.revokeObjectURL(prevUrl3)
+        if (prevUrl3) deferRevokeUrl(prevUrl3)
         video.currentTime = seekTime
         video.volume = Math.min(1, (correctSeg.volume ?? 1) * masterVolumeRef.current)
         video.playbackRate = correctSeg.speed ?? 1
@@ -363,7 +380,7 @@ export function startVideoTick(params: VideoTickParams): void {
             const url = URL.createObjectURL(loopClip.file)
             objectUrlRef.current = url
             video.src = url
-            if (prevUrl4) URL.revokeObjectURL(prevUrl4)
+            if (prevUrl4) deferRevokeUrl(prevUrl4)
           }
           const seekTime = loopStartSeg.inPoint + (loop.start - loopStartSeg.startOnTimeline) * Math.max(0.01, loopStartSeg.speed ?? 1)
           video.currentTime = seekTime
@@ -491,10 +508,10 @@ export function startVideoTick(params: VideoTickParams): void {
           video.removeAttribute('src')
           video.load()
           video.style.opacity = '0'
-          if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null }
+          if (objectUrlRef.current) { deferRevokeUrl(objectUrlRef.current); objectUrlRef.current = null }
           // Clean up any pending preload
           if (preloadPending && transitionUrlRef.current) {
-            URL.revokeObjectURL(transitionUrlRef.current)
+            deferRevokeUrl(transitionUrlRef.current)
             transitionUrlRef.current = null
             if (transitionVideoRef.current) {
               transitionVideoRef.current.pause(); transitionVideoRef.current.src = ''
@@ -539,7 +556,7 @@ export function startVideoTick(params: VideoTickParams): void {
             transitionVideoRef.current.style.display = 'none'
             objectUrlRef.current = tUrl
             video.src = tUrl
-            if (prevUrl6) URL.revokeObjectURL(prevUrl6)
+            if (prevUrl6) deferRevokeUrl(prevUrl6)
             video.currentTime = tTime
             video.volume = Math.min(1, (nextSeg.volume ?? 1) * masterVolumeRef.current)
             video.playbackRate = nextSeg.speed ?? 1
@@ -571,8 +588,8 @@ export function startVideoTick(params: VideoTickParams): void {
               cancelPlayRef.current = () => { abort.cancelled = true }
             } else {
               const usePreload = preloadPending && preloadForSegId === nextSeg.id && transitionUrlRef.current
-              if (usePreload && transitionVideoRef.current) {
-                // Element swap: show the already-decoded TV immediately (no black flash),
+              if (usePreload && transitionVideoRef.current && transitionVideoRef.current.readyState >= 2) {
+                // Element swap: TV is decoded and ready — show it immediately (no black flash),
                 // load main video in background, swap back when ready.
                 const tv = transitionVideoRef.current
                 tv.style.opacity = '1'
@@ -584,7 +601,7 @@ export function startVideoTick(params: VideoTickParams): void {
                 const prevUrl5 = objectUrlRef.current
                 objectUrlRef.current = transitionUrlRef.current!
                 video.src = transitionUrlRef.current!
-                if (prevUrl5) URL.revokeObjectURL(prevUrl5)
+                if (prevUrl5) deferRevokeUrl(prevUrl5)
                 video.currentTime = nextSeekTime
                 video.volume = tv.volume
                 video.playbackRate = tv.playbackRate
@@ -593,11 +610,20 @@ export function startVideoTick(params: VideoTickParams): void {
                 preloadForSegId = null
                 preloadSwapActive = true
               } else {
+                if (usePreload && transitionVideoRef.current) {
+                  deferRevokeUrl(transitionUrlRef.current)
+                  transitionUrlRef.current = null
+                  transitionVideoRef.current.pause()
+                  transitionVideoRef.current.removeAttribute('src')
+                  transitionVideoRef.current.style.display = 'none'
+                  preloadPending = false
+                  preloadForSegId = null
+                }
                 const swapUrl = URL.createObjectURL(nextClip.file)
                 const prevUrl5 = objectUrlRef.current
                 objectUrlRef.current = swapUrl
                 video.src = swapUrl
-                if (prevUrl5) URL.revokeObjectURL(prevUrl5)
+                if (prevUrl5) deferRevokeUrl(prevUrl5)
                 video.currentTime = nextSeekTime
                 video.volume = Math.min(1, (nextSeg.volume ?? 1) * masterVolumeRef.current)
                 video.playbackRate = nextSeg.speed ?? 1
@@ -608,7 +634,7 @@ export function startVideoTick(params: VideoTickParams): void {
             }
             activeSegRef.current = nextSeg
           } else {
-            if (objectUrlRef.current) { URL.revokeObjectURL(objectUrlRef.current); objectUrlRef.current = null }
+            if (objectUrlRef.current) { deferRevokeUrl(objectUrlRef.current); objectUrlRef.current = null }
             setIsPlaying(false)
             return
           }
@@ -666,7 +692,7 @@ export function startAudioOnlyTick(params: AudioOnlyTickParams): () => void {
         const nextClip = clipsRef.current.find((c) => c.id === nextSeg.clipId)
         if (nextClip?.file) {
           cancelPlayRef.current()
-          if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current)
+          if (audioUrlRef.current) deferRevokeUrl(audioUrlRef.current)
           const url = URL.createObjectURL(nextClip.file)
           audioUrlRef.current = url
           audioRef.current.src = url

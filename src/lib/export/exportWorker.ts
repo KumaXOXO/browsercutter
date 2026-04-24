@@ -98,15 +98,21 @@ async function runExport(req: ExportRequest) {
 
   // Always use filter_complex so each segment gets setpts=PTS-STARTPTS,
   // preventing timestamp discontinuities when segments are non-contiguous in the source file.
+  // Deduplicate: one -i per unique clip (not per segment) to avoid WASM OOM
+  const clipInputMap = new Map<string, number>()
   const inputs: string[] = []
   for (const seg of v1Segs) {
-    const cd = req.clipFiles[seg.clipId]
-    const ext = cd.name.split('.').pop()?.toLowerCase() ?? 'mp4'
-    inputs.push('-i', `clip_${seg.clipId}.${ext}`)
+    if (!clipInputMap.has(seg.clipId)) {
+      const cd = req.clipFiles[seg.clipId]
+      const ext = cd.name.split('.').pop()?.toLowerCase() ?? 'mp4'
+      clipInputMap.set(seg.clipId, clipInputMap.size)
+      inputs.push('-i', `clip_${seg.clipId}.${ext}`)
+    }
   }
+  const segInputIdx = v1Segs.map((s) => clipInputMap.get(s.clipId)!)
 
   const { filterComplex, videoOut, audioOut } = buildFilterComplex(
-    v1Segs, req.transitions, req.adjustmentLayers, width, height,
+    v1Segs, req.transitions, req.adjustmentLayers, width, height, segInputIdx,
   )
 
   let exitCode = await ffmpeg.exec([
