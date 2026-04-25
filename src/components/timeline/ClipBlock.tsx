@@ -66,8 +66,6 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
 
   // Move drag: mousedown on body
   const handleBodyMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Always select the clicked segment so the inspector opens regardless of mode.
-    if (timelineMode !== 'cut') setSelectedElement({ type: 'segment', id: segment.id })
     if (timelineMode === 'playhead') return  // let event bubble to track for playhead jump
 
     e.stopPropagation()
@@ -120,11 +118,18 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
       return
     }
 
-    // Normal click: single select and drag (with cross-timeline track detection)
-    // setSelectedElement already called at top of handler
-    const multiIds = selectedSegmentIds.includes(segment.id) ? selectedSegmentIds : [segment.id]
+    // Normal click / drag.
+    // Capture multi-selection state BEFORE any setSelectedElement call (which clears selectedSegmentIds).
+    const soloSelected = isSelected && selectedSegmentIds.length === 0
+    const inMultiSelect = selectedSegmentIds.includes(segment.id)
+    const multiIds = inMultiSelect ? [...selectedSegmentIds] : [segment.id]
 
-    // Push one undo snapshot before drag begins (not inside mousemove to avoid flooding)
+    // Select immediately for new selections so the inspector opens on mousedown.
+    // For toggle (soloSelected) and multi-drag (inMultiSelect), defer to mouseup.
+    if (!soloSelected && !inMultiSelect) {
+      setSelectedElement({ type: 'segment', id: segment.id })
+    }
+
     pushHistory()
 
     const trackContent = (e.currentTarget as HTMLElement).parentElement!
@@ -136,21 +141,20 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
       segments.filter((s) => multiIds.includes(s.id)).map((s) => [s.id, s.startOnTimeline])
     )
 
-    // Set pointer-events:none on this element so elementsFromPoint can see tracks below
     const dragEl = e.currentTarget as HTMLElement
     dragEl.style.pointerEvents = 'none'
+    let hasDragged = false
 
     const handleMouseMove = (ev: MouseEvent) => {
+      hasDragged = true
       const curScroll = scrollContainer?.scrollLeft ?? 0
       const { projectSettings: ps, bpmConfig: bc } = useAppStore.getState()
       const beatDuration = ps.snapToBeat ? 60 / Math.max(1, bc.bpm) : 0
-      // Snap to gridStep subdivisions (e.g. ¼ beat = beatDuration * 0.25)
       const snapUnit = beatDuration > 0 ? beatDuration * (bc.gridStep ?? 1) : 0
       const rawStart = Math.max(0, (ev.clientX - trackRect.left + curScroll - offsetX) / px)
       const newStart = snapUnit > 0 ? Math.round(rawStart / snapUnit) * snapUnit : rawStart
       const primaryDelta = newStart - (startPositions[segment.id] ?? segment.startOnTimeline)
 
-      // Detect target track under cursor for cross-timeline drag
       const els = document.elementsFromPoint(ev.clientX, ev.clientY)
       const trackEl = els.find((el) => el instanceof HTMLElement && el.dataset.trackIndex !== undefined) as HTMLElement | undefined
       const targetTrackIndex = trackEl ? parseInt(trackEl.dataset.trackIndex!, 10) : null
@@ -158,8 +162,6 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
       document.dispatchEvent(new CustomEvent('bc:drag-track', { detail: targetTrackIndex !== null ? { trackIndex: targetTrackIndex, clipType: clip.type } : null }))
 
       if (multiIds.length > 1) {
-        // Multi-select: horizontal only — preserve each clip's original track.
-        // When clips from multiple rows are selected, vertical movement is blocked entirely.
         const selectedSegs = useAppStore.getState().segments.filter((s) => multiIds.includes(s.id))
         const multiRowDrag = new Set(selectedSegs.map((s) => s.trackIndex)).size > 1
         const patches = multiIds.map((id) => {
@@ -189,6 +191,16 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
       document.dispatchEvent(new CustomEvent<null>('bc:drag-track', { detail: null }))
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
+
+      if (!hasDragged) {
+        if (soloSelected) {
+          // Re-click on the already-selected solo clip → deselect (toggle)
+          setSelectedElement(null)
+        } else if (inMultiSelect) {
+          // Click (no drag) on a multi-selected clip → single-focus it
+          setSelectedElement({ type: 'segment', id: segment.id })
+        }
+      }
     }
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
@@ -325,14 +337,14 @@ export default function ClipBlock({ segment, clip, zoom }: Props) {
         left, width,
         borderRadius: 5,
         background: showThumbnails && clip.type !== 'audio' ? 'transparent' : bg,
-        cursor: timelineMode === 'playhead' ? 'default' : timelineMode === 'cut' ? 'crosshair' : 'grab',
+        cursor: timelineMode === 'playhead' ? 'grab' : timelineMode === 'cut' ? 'crosshair' : 'grab',
         userSelect: 'none',
         display: 'flex',
         alignItems: 'center',
         overflow: 'hidden',
         outline: (isSelected || isMultiSelected) ? '2px solid #F43F5E' : showThumbnails && clip.type !== 'audio' ? '1.5px solid rgba(255,255,255,0.7)' : 'none',
         outlineOffset: 1,
-        opacity: segment.hidden ? 0.4 : 1,
+        opacity: segment.hidden ? 0.4 : timelineMode === 'playhead' ? 0.55 : 1,
         filter: hovered && !isSelected ? 'brightness(1.2)' : undefined,
         transition: 'filter 120ms, opacity 120ms',
       }}

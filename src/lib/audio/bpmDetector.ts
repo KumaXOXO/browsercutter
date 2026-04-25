@@ -16,49 +16,46 @@ export async function detectBpm(file: File): Promise<number> {
 }
 
 function computeBpm(data: Float32Array, sampleRate: number): number {
-  // Compute RMS energy in overlapping 50ms windows
-  const windowSize = Math.round(sampleRate * 0.05)
-  const hopSize = Math.round(windowSize / 2)
-  const energies: number[] = []
+  const windowSize = Math.round(sampleRate * 0.05) // 50ms
+  const hopSize = Math.round(windowSize / 2)        // 25ms
 
+  // Onset detection function: positive energy increase between windows
+  const odf: number[] = []
+  let prevEnergy = 0
   for (let i = 0; i + windowSize < data.length; i += hopSize) {
     let energy = 0
     for (let j = 0; j < windowSize; j++) energy += data[i + j] ** 2
-    energies.push(energy / windowSize)
+    energy /= windowSize
+    odf.push(Math.max(0, energy - prevEnergy))
+    prevEnergy = energy
   }
 
-  // Find onset peaks: local maximum that's 30% above local average
-  const contextLen = 20
-  const onsetTimes: number[] = []
-  let lastOnset = -Infinity
+  const hopDuration = hopSize / sampleRate
 
-  for (let i = contextLen; i < energies.length - contextLen; i++) {
-    const localAvg = energies.slice(i - contextLen, i).reduce((a, b) => a + b, 0) / contextLen
-    const isLocalMax = energies[i] > energies[i - 1] && energies[i] > energies[i + 1]
+  // Autocorrelation of ODF to find the dominant beat period.
+  // BPM 60–200 → period 1.0s–0.3s → lag 40–12 hops at 25ms/hop.
+  const minLag = Math.max(1, Math.round(0.3 / hopDuration))
+  const maxLag = Math.round(1.0 / hopDuration)
 
-    if (isLocalMax && energies[i] > localAvg * 1.3) {
-      const t = (i * hopSize) / sampleRate
-      if (t - lastOnset > 0.2) { // min 200ms between onsets (max 300 BPM)
-        onsetTimes.push(t)
-        lastOnset = t
-      }
+  let bestLag = minLag
+  let bestCorr = -Infinity
+
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    const n = odf.length - lag
+    if (n <= 0) continue
+    let corr = 0
+    for (let i = 0; i < n; i++) corr += odf[i] * odf[i + lag]
+    // Normalize by n so longer lags don't win simply by having more terms
+    if (corr / n > bestCorr) {
+      bestCorr = corr / n
+      bestLag = lag
     }
   }
 
-  if (onsetTimes.length < 4) return 120 // not enough onsets — return default
+  const periodSeconds = bestLag * hopDuration
+  let bpm = 60 / periodSeconds
 
-  // Compute inter-onset intervals, take median
-  const intervals: number[] = []
-  for (let i = 1; i < onsetTimes.length; i++) {
-    intervals.push(onsetTimes[i] - onsetTimes[i - 1])
-  }
-
-  const sorted = [...intervals].sort((a, b) => a - b)
-  const median = sorted[Math.floor(sorted.length / 2)]
-
-  let bpm = 60 / median
-
-  // Normalize to 60–200 BPM range
+  // Normalize to 60–200 BPM
   while (bpm < 60) bpm *= 2
   while (bpm > 200) bpm /= 2
 

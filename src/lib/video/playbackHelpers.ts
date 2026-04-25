@@ -2,7 +2,7 @@ import type { Segment, Clip, TimelineTrack } from '../../types'
 import type { ClipVideoPool } from './videoPool'
 
 export function videoIndices(tracks: TimelineTrack[]): Set<number> {
-  return new Set(tracks.filter((t) => t.type === 'video' && !t.hidden).map((t) => t.trackIndex))
+  return new Set(tracks.filter((t) => t.type === 'video' && !t.hidden && !t.muted).map((t) => t.trackIndex))
 }
 
 export function audioIndices(tracks: TimelineTrack[]): Set<number> {
@@ -113,7 +113,7 @@ export function activateClip(
   playAbortRef: { current: { cancelled: boolean } },
   setIsPlaying: (playing: boolean) => void,
 ): void {
-  const video = pool.ensure(clip.id, clip.file)
+  const video = pool.ensure(clip.id, clip.proxyFile ?? clip.file)
   pool.pauseAllExcept(clip.id)
   pool.showOnly(clip.id)
   pool.applyTransform(clip.id, seg.rotation ?? 0)

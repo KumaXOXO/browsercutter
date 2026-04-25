@@ -24,6 +24,7 @@ export interface Clip {
   type: ClipType
   thumbnail?: string     // data URL (video/image only)
   bpm?: number
+  proxyFile?: File       // low-res proxy for large-file preview
 }
 
 export interface Segment {

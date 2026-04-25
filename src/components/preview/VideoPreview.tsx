@@ -67,7 +67,7 @@ export default function VideoPreview() {
   }, [projectSettings.stretchToFormat])
 
   const videoTrackIdx = useMemo(
-    () => new Set(tracks.filter((t) => t.type === 'video' && !t.hidden).map((t) => t.trackIndex)),
+    () => new Set(tracks.filter((t) => t.type === 'video' && !t.hidden && !t.muted).map((t) => t.trackIndex)),
     [tracks],
   )
   const audioTrackIdx = useMemo(

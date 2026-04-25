@@ -52,10 +52,10 @@ self.onmessage = async (e: MessageEvent<ExportRequest>) => {
 async function runExport(req: ExportRequest) {
   post({ type: 'progress', value: 0.01, label: 'Loading FFmpeg...' })
 
-  const BASE = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm'
+  const base = new URL('/', self.location.href).href
   await ffmpeg.load({
-    coreURL: await toBlobURL(`${BASE}/ffmpeg-core.js`, 'text/javascript'),
-    wasmURL: await toBlobURL(`${BASE}/ffmpeg-core.wasm`, 'application/wasm'),
+    coreURL: await toBlobURL(`${base}ffmpeg-core.js`, 'text/javascript'),
+    wasmURL: await toBlobURL(`${base}ffmpeg-core.wasm`, 'application/wasm'),
   })
 
   post({ type: 'progress', value: 0.05, label: 'Writing clips...' })

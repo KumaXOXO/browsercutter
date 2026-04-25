@@ -38,6 +38,7 @@ export default function Timeline({ height = 205, isDragging = false }: Props) {
   const [playheadDragging, setPlayheadDragging] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const zoomRef = useRef(zoom)
+  const playheadRef = useRef(0)
   useEffect(() => { zoomRef.current = zoom }, [zoom])
 
   const {
@@ -48,6 +49,17 @@ export default function Timeline({ height = 205, isDragging = false }: Props) {
     projectSettings, updateProjectSettings,
     bpmConfig, updateBpmConfig,
   } = useAppStore()
+
+  useEffect(() => { playheadRef.current = playheadPosition }, [playheadPosition])
+
+  // Center the timeline on the playhead whenever zoom changes
+  useEffect(() => {
+    const container = scrollRef.current
+    if (!container) return
+    const playheadPx = TRACK_LABEL_WIDTH + playheadRef.current * PX_PER_SEC * zoom
+    container.scrollLeft = Math.max(0, playheadPx - container.clientWidth / 2)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoom])
 
   const currentCutIdx = GRID_VALUES.indexOf(cutGridParts)
   const stepCutUp = () => { if (currentCutIdx < GRID_VALUES.length - 1) setCutGridParts(GRID_VALUES[currentCutIdx + 1]) }

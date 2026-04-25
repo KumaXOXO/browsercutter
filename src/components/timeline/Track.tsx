@@ -89,7 +89,7 @@ export default function Track({ trackIndex, trackType, label, icon, height, zoom
       )}
       <div
         className="relative h-full"
-        style={{ width: totalWidth, background: dragTarget ? 'rgba(225,29,72,0.12)' : undefined, transition: 'background 80ms' }}
+        style={{ width: totalWidth, background: dragTarget ? 'rgba(225,29,72,0.12)' : undefined, transition: 'background 80ms', cursor: timelineMode === 'playhead' ? 'grab' : undefined }}
         data-track-index={trackIndex}
         data-track-type={trackType}
         onDragOver={handleDragOver}
@@ -98,6 +98,20 @@ export default function Track({ trackIndex, trackType, label, icon, height, zoom
           if (timelineMode === 'playhead') {
             const rect = e.currentTarget.getBoundingClientRect()
             setPlayheadPosition(Math.max(0, (e.clientX - rect.left) / (PX_PER_SEC * zoom)))
+            // Drag to pan the timeline
+            const scrollEl = e.currentTarget.closest('.overflow-auto') as HTMLElement | null
+            if (!scrollEl) return
+            const startX = e.clientX
+            const startScroll = scrollEl.scrollLeft
+            const onMove = (ev: MouseEvent) => {
+              scrollEl.scrollLeft = Math.max(0, startScroll - (ev.clientX - startX))
+            }
+            const onUp = () => {
+              document.removeEventListener('mousemove', onMove)
+              document.removeEventListener('mouseup', onUp)
+            }
+            document.addEventListener('mousemove', onMove)
+            document.addEventListener('mouseup', onUp)
           }
         }}
         onClick={(e) => {

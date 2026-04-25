@@ -3,20 +3,21 @@ import { useState } from 'react'
 import { Play, Plus } from 'lucide-react'
 import type { Clip } from '../../../types'
 import { useAppStore } from '../../../store/useAppStore'
+import type { ProxyJobs } from './MediaPanel'
 
-export default function VideoGrid({ clips }: { clips: Clip[] }) {
+export default function VideoGrid({ clips, proxyJobs }: { clips: Clip[]; proxyJobs: ProxyJobs }) {
   if (clips.length === 0) {
     return <p className="text-xs text-center" style={{ color: 'var(--muted-subtle)' }}>No videos yet. Upload some above.</p>
   }
 
   return (
     <div className="grid grid-cols-2 gap-2">
-      {clips.map((clip) => <VideoThumb key={clip.id} clip={clip} />)}
+      {clips.map((clip) => <VideoThumb key={clip.id} clip={clip} proxyJob={proxyJobs[clip.id]} />)}
     </div>
   )
 }
 
-function VideoThumb({ clip }: { clip: Clip }) {
+function VideoThumb({ clip, proxyJob }: { clip: Clip; proxyJob?: { progress: number; label: string } }) {
   const [hovered, setHovered] = useState(false)
   const { segments, addSegment, setPlayheadPosition } = useAppStore()
 
@@ -61,7 +62,31 @@ function VideoThumb({ clip }: { clip: Clip }) {
         <span className="absolute bottom-1 right-1 text-white text-xs font-mono" style={{ background: 'rgba(0,0,0,0.65)', padding: '1px 5px', borderRadius: 3 }}>
           {formatDuration(clip.duration)}
         </span>
-        {hovered && (
+        {/* Proxy badge — ready */}
+        {clip.proxyFile && !proxyJob && (
+          <span title="Preview proxy active — playback uses a smaller 720p version" style={{
+            position: 'absolute', top: 4, left: 4,
+            background: 'rgba(34,197,94,0.85)', color: 'white',
+            fontSize: 8, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
+          }}>
+            PROXY
+          </span>
+        )}
+        {/* Proxy badge — generating */}
+        {proxyJob && (
+          <div style={{
+            position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
+          }}>
+            <div style={{ width: '80%', height: 3, background: 'rgba(255,255,255,0.15)', borderRadius: 2 }}>
+              <div style={{ width: `${Math.round(proxyJob.progress * 100)}%`, height: '100%', background: '#22c55e', borderRadius: 2, transition: 'width 300ms' }} />
+            </div>
+            <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 8, textAlign: 'center', padding: '0 4px' }}>
+              {proxyJob.label}
+            </span>
+          </div>
+        )}
+        {hovered && !proxyJob && (
           <button
             title="Add to timeline"
             onMouseDown={(e) => e.stopPropagation()}

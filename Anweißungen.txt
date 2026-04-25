@@ -1,1 +1,14 @@
+wichtigtes Problem: ich habe ein videofile mit der größe von 2.2gb zum testen genommen. da es aber zu groß für die neue preview proxy methode sein sollte denke ich das deswegen beim abspielen in der preview doch wieder auf die only FFMPEGwasm methode zurückgegriffen wird korrekt? könnten wir es nicht so machen das bei dateien die zu groß dafür sind noch eine komprimierte version angefertigt wird die dann anstattdessen für die proxy option verwendet wird? dann müsste aber da ein hinweis und ladebalken in der Zeit kommen das man weiß das gerade das ausgeführt wird. und es müsste halt da schon ein speicherort für den Projectordner ausgewählt werden. das bitte in den hinweis davor reinschreiben.
+
+ok mute von den einzellnen videospuren funktioniert nicht.
+
+gerade ist es auch so das wenn man etwas markieren will das markierte objekt sobald man es los lässt nicht mehr markiert ist. ich hätte gerne das die markierung durch ein anklicken ausgelöst wird und bleibt bis man den clip wieder anklickt, auf eine leere stelle in der timeline clickt oder einen anderen clip ohne das drücken von strg oder shift anklickt und diesen damit auswählt. auch wenn man in verschiebt soll die markierung nicht aufgehoben werden. und das auch nicht wenn mehrere clips markiert sind und verschoeben werden.
+
+moven mit maustasten. die auswahl einens clips soll mit den pfeiltasten wechseln können. mit links und rechts springt man in der selben timeline und mit oben und unten springt man auf den nähesten clip in den timline darüber oder darunter
+
+beim exportieren habe ich immer noch den fehler: export fix Export failed Failed to fetch
+
+im playhead mode soll die timeline grap bar werden und dann zieh und schiebbar werden. auch sollte man beim in die timeline zoomen immer in den bereich zoomen das bei vollem zoom der playhead in der mitte wäre. und im playhead mode solle ein click in der timeline den playhead auch an diese stelle springen lassen.
+
+die BPM cut funktion schneidet auch nicht auf den takt zu sein. kannst du das bitte überprüfen?
 
