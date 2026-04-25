@@ -21,10 +21,13 @@ export function useExport(): ExportState {
   const [label, setLabel] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const workerRef = useRef<Worker | null>(null)
+  const blobUrlsRef = useRef<string[]>([])
 
   const cancel = useCallback(() => {
     workerRef.current?.terminate()
     workerRef.current = null
+    blobUrlsRef.current.forEach((u) => URL.revokeObjectURL(u))
+    blobUrlsRef.current = []
     setStatus('idle')
     setProgress(0)
     setLabel('')
@@ -46,7 +49,9 @@ export function useExport(): ExportState {
     setLabel('Preparing...')
     setErrorMsg('')
 
-    const clipFiles: Record<string, { file: File; name: string }> = {}
+    const clipFiles: Record<string, { url: string; name: string }> = {}
+    blobUrlsRef.current = []
+    const blobUrls = blobUrlsRef.current
     const needed = new Set(videoSegs.map((s) => s.clipId))
 
     const missingFiles = clips.filter((c) => needed.has(c.id) && !c.file).map((c) => c.name)
@@ -56,8 +61,8 @@ export function useExport(): ExportState {
       return
     }
 
-    // Lightweight accessibility check: read 1 byte to verify each file is reachable.
-    // The full buffer is read inside the worker to keep the main thread responsive.
+    // Create blob URLs on the main thread where file permissions are guaranteed.
+    // Workers can fetch blob URLs without running into permission expiry issues.
     const notAllowed: string[] = []
     const notReadable: string[] = []
     const otherErrors: string[] = []
@@ -65,7 +70,9 @@ export function useExport(): ExportState {
       if (!needed.has(clip.id) || !clip.file) continue
       try {
         await clip.file.slice(0, 1).arrayBuffer()
-        clipFiles[clip.id] = { file: clip.file, name: clip.name }
+        const url = URL.createObjectURL(clip.file)
+        blobUrls.push(url)
+        clipFiles[clip.id] = { url, name: clip.name }
       } catch (e) {
         if (e instanceof DOMException && e.name === 'NotAllowedError') notAllowed.push(clip.name)
         else if (e instanceof DOMException && e.name === 'NotReadableError') notReadable.push(clip.name)
@@ -128,6 +135,7 @@ export function useExport(): ExportState {
         setProgress(1)
         setLabel('Done!')
         setStatus('done')
+        blobUrls.forEach((u) => URL.revokeObjectURL(u))
         ;(async () => {
           const filename = await getUniqueExportFilename(baseName, ext)
           let saved = await writeExportFile(msg.buffer, filename).catch(() => false)
@@ -147,6 +155,7 @@ export function useExport(): ExportState {
       } else if (msg.type === 'error') {
         setErrorMsg(msg.message)
         setStatus('error')
+        blobUrls.forEach((u) => URL.revokeObjectURL(u))
         workerRef.current = null
       }
     }

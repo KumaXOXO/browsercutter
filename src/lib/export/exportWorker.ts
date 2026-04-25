@@ -13,7 +13,7 @@ export interface ExportRequest {
     startOnTimeline: number; inPoint: number; outPoint: number
     volume?: number; speed?: number; effects?: import('../../types').Effect[]
   }>
-  clipFiles: Record<string, { file: File; name: string }>
+  clipFiles: Record<string, { url: string; name: string }>
   fps: number
   resolution: string
   transitions: Transition[]
@@ -75,7 +75,7 @@ async function runExport(req: ExportRequest) {
     const ext = cd.name.split('.').pop()?.toLowerCase() ?? 'mp4'
     const fname = `clip_${seg.clipId}.${ext}`
     if (!writtenFiles.has(fname)) {
-      const buf = await cd.file.arrayBuffer()
+      const buf = await fetch(cd.url).then((r) => r.arrayBuffer())
       await ffmpeg.writeFile(fname, new Uint8Array(buf))
       writtenFiles.add(fname)
     }

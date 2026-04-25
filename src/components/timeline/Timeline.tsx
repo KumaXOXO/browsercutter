@@ -149,6 +149,60 @@ export default function Timeline({ height = 205, isDragging = false }: Props) {
         return
       }
 
+      // Arrow key timeline navigation (no modifiers)
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey &&
+          (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault()
+        const { tracks: allTracks, isPlaying, setIsPlaying } = store
+        const anchorId = selectedElement?.id ?? selectedSegmentIds[0]
+        const anchorSeg = segments.find((s) => s.id === anchorId)
+
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          const trackIdx = anchorSeg?.trackIndex ?? (allTracks[0]?.trackIndex ?? 0)
+          const trackSegs = segments
+            .filter((s) => s.trackIndex === trackIdx)
+            .sort((a, b) => a.startOnTimeline - b.startOnTimeline)
+          if (trackSegs.length === 0) return
+
+          let target = trackSegs[0]
+          if (anchorSeg) {
+            const ci = trackSegs.findIndex((s) => s.id === anchorSeg.id)
+            const ni = e.key === 'ArrowRight' ? ci + 1 : ci - 1
+            if (ni < 0 || ni >= trackSegs.length) return
+            target = trackSegs[ni]
+          } else if (e.key === 'ArrowLeft') {
+            target = trackSegs[trackSegs.length - 1]
+          }
+          if (isPlaying) setIsPlaying(false)
+          setSelectedElement({ type: 'segment', id: target.id })
+          store.setPlayheadPosition(target.startOnTimeline)
+          return
+        }
+
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          const curPos = anchorSeg
+            ? allTracks.findIndex((t) => t.trackIndex === anchorSeg.trackIndex)
+            : -1
+          const nextPos = e.key === 'ArrowUp'
+            ? Math.max(0, curPos <= 0 ? 0 : curPos - 1)
+            : Math.min(allTracks.length - 1, curPos < 0 ? 0 : curPos + 1)
+          const targetTrack = allTracks[nextPos]
+          if (!targetTrack || targetTrack.trackIndex === anchorSeg?.trackIndex) return
+
+          const refPos = anchorSeg?.startOnTimeline ?? store.playheadPosition
+          const candidates = segments.filter((s) => s.trackIndex === targetTrack.trackIndex)
+          if (candidates.length === 0) return
+
+          const closest = candidates.reduce((best, s) =>
+            Math.abs(s.startOnTimeline - refPos) < Math.abs(best.startOnTimeline - refPos) ? s : best
+          )
+          if (isPlaying) setIsPlaying(false)
+          setSelectedElement({ type: 'segment', id: closest.id })
+          store.setPlayheadPosition(closest.startOnTimeline)
+          return
+        }
+      }
+
       // Frame step: . = forward, , = back
       if (e.key === '.' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
         e.preventDefault()
