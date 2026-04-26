@@ -95,6 +95,13 @@ export default function Track({ trackIndex, trackType, label, icon, height, zoom
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onMouseDown={(e) => {
+          // Deselect when clicking empty track area in selection mode.
+          // ClipBlock calls e.stopPropagation() on its own mousedown, so this only
+          // fires when the user clicks genuine empty space — no data-segment-id check needed.
+          if (timelineMode === 'selection') {
+            setSelectedElement(null)
+            setSelectedSegmentIds([])
+          }
           if (timelineMode === 'playhead') {
             const rect = e.currentTarget.getBoundingClientRect()
             setPlayheadPosition(Math.max(0, (e.clientX - rect.left) / (PX_PER_SEC * zoom)))
@@ -112,14 +119,6 @@ export default function Track({ trackIndex, trackType, label, icon, height, zoom
             }
             document.addEventListener('mousemove', onMove)
             document.addEventListener('mouseup', onUp)
-          }
-        }}
-        onClick={(e) => {
-          // Deselect only on a clean click (no drag) in empty track area.
-          // Using onClick instead of onMouseDown so dragging clips doesn't clear selection.
-          if (timelineMode === 'selection' && !(e.target as Element).closest('[data-segment-id]')) {
-            setSelectedElement(null)
-            setSelectedSegmentIds([])
           }
         }}
       >

@@ -234,11 +234,14 @@ export default function Timeline({ height = 205, isDragging = false }: Props) {
         }
 
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-          const curPos = allTracks.findIndex((t) => t.trackIndex === anchorSeg.trackIndex)
+          const anchorTrack = allTracks.find((t) => t.trackIndex === anchorSeg.trackIndex)
+          if (!anchorTrack) return
+          const sameTracks = allTracks.filter((t) => t.type === anchorTrack.type)
+          const curPos = sameTracks.findIndex((t) => t.trackIndex === anchorSeg.trackIndex)
           const nextPos = e.key === 'ArrowUp'
             ? Math.max(0, curPos - 1)
-            : Math.min(allTracks.length - 1, curPos + 1)
-          const targetTrack = allTracks[nextPos]
+            : Math.min(sameTracks.length - 1, curPos + 1)
+          const targetTrack = sameTracks[nextPos]
           if (!targetTrack || targetTrack.trackIndex === anchorSeg.trackIndex) return
           if (isPlaying) setIsPlaying(false)
           updateSegment(anchorSeg.id, { trackIndex: targetTrack.trackIndex })
