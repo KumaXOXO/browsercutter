@@ -160,3 +160,43 @@ describe('buildFilterComplex', () => {
     expect(filterComplex).not.toContain('split=')
   })
 })
+
+describe('buildFilterComplex videoOnly=true', () => {
+  it('single segment produces no audio filters', () => {
+    const segs = [makeSeg('s0', 'c0', 0, 5)]
+    const { filterComplex, videoOut } = buildFilterComplex(segs, [], [], W, H, undefined, true)
+    expect(filterComplex).not.toContain('atrim')
+    expect(filterComplex).not.toContain('asetpts')
+    expect(videoOut).toBe('vs0')
+  })
+
+  it('shared input skips asplit but keeps split', () => {
+    const segs = [makeSeg('s0', 'c0', 0, 2), makeSeg('s1', 'c0', 2, 4)]
+    const { filterComplex } = buildFilterComplex(segs, [], [], W, H, [0, 0], true)
+    expect(filterComplex).toContain('[0:v]split=2')
+    expect(filterComplex).not.toContain('asplit')
+  })
+
+  it('two segments with cut skips audio concat', () => {
+    const segs = [makeSeg('s0', 'c0', 0, 5), makeSeg('s1', 'c1', 0, 4)]
+    const { filterComplex } = buildFilterComplex(segs, [], [], W, H, undefined, true)
+    expect(filterComplex).toContain('concat=n=2:v=1:a=0')
+    expect(filterComplex).not.toContain('concat=n=2:v=0:a=1')
+  })
+
+  it('two segments with fade skips acrossfade but keeps xfade', () => {
+    const segs = [makeSeg('s0', 'c0', 0, 5), makeSeg('s1', 'c1', 0, 4)]
+    const trans = [makeTrans('t0', 's0', 's1', 'fade', 0.5)]
+    const { filterComplex } = buildFilterComplex(segs, trans, [], W, H, undefined, true)
+    expect(filterComplex).toContain('xfade=transition=fade')
+    expect(filterComplex).not.toContain('acrossfade')
+  })
+
+  it('segment with speed and volume skips atempo and volume filters', () => {
+    const segs = [makeSeg('s0', 'c0', 0, 5, { speed: 2.0, volume: 0.5 })]
+    const { filterComplex } = buildFilterComplex(segs, [], [], W, H, undefined, true)
+    expect(filterComplex).toContain('setpts=(1/2.0000)*(PTS-STARTPTS)')
+    expect(filterComplex).not.toContain('atempo')
+    expect(filterComplex).not.toContain('volume=')
+  })
+})

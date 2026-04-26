@@ -4,9 +4,6 @@ import { toBlobURL } from '@ffmpeg/util'
 import type { Transition, AdjustmentLayer } from '../../types'
 import { buildFilterComplex } from './exportWorkerUtils'
 
-export type { ExportSegment } from './exportWorkerUtils'
-export { calculateXfadeOffsets, buildFilterComplex } from './exportWorkerUtils'
-
 export interface ExportRequest {
   segments: Array<{
     id: string; clipId: string; trackIndex: number
@@ -123,12 +120,37 @@ async function runExport(req: ExportRequest) {
     '-y', outputFile,
   ])
 
-  // If encoding failed (e.g. clip without audio stream), retry without audio mapping
+  // If encoding failed (e.g. clip has no audio stream), the WASM may be in a
+  // corrupted state. Terminate, reload, re-write clips, then retry video-only.
   if (exitCode !== 0) {
+    post({ type: 'progress', value: 0.25, label: 'Retrying (video only)...' })
+
+    ffmpeg.terminate()
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${base}ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${base}ffmpeg-core.wasm`, 'application/wasm'),
+    })
+
+    const rewritten = new Set<string>()
+    for (const seg of v1Segs) {
+      const cd = req.clipFiles[seg.clipId]
+      if (!cd) continue
+      const ext = cd.name.split('.').pop()?.toLowerCase() ?? 'mp4'
+      const fname = `clip_${seg.clipId}.${ext}`
+      if (!rewritten.has(fname)) {
+        const buf = await fetch(cd.url).then((r) => r.arrayBuffer())
+        await ffmpeg.writeFile(fname, new Uint8Array(buf))
+        rewritten.add(fname)
+      }
+    }
+
+    const { filterComplex: videoOnlyFC, videoOut: vOut2 } = buildFilterComplex(
+      v1Segs, req.transitions, req.adjustmentLayers, width, height, segInputIdx, true,
+    )
     exitCode = await ffmpeg.exec([
       ...inputs,
-      '-filter_complex', filterComplex,
-      '-map', `[${videoOut}]`, '-an',
+      '-filter_complex', videoOnlyFC,
+      '-map', `[${vOut2}]`, '-an',
       ...buildEncodeArgs(format, quality, req.fps),
       '-y', outputFile,
     ])

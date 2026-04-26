@@ -53,6 +53,7 @@ export function buildFilterComplex(
   width: number,
   height: number,
   segInputIdx?: number[],
+  videoOnly?: boolean,
 ): { filterComplex: string; videoOut: string; audioOut: string } {
   const lines: string[] = []
 
@@ -68,9 +69,11 @@ export function buildFilterComplex(
     for (const [inputIdx, count] of usageCount) {
       if (count > 1) {
         const vOut = Array.from({ length: count }, (_, k) => `[vin${inputIdx}_${k}]`).join('')
-        const aOut = Array.from({ length: count }, (_, k) => `[ain${inputIdx}_${k}]`).join('')
         lines.push(`[${inputIdx}:v]split=${count}${vOut}`)
-        lines.push(`[${inputIdx}:a]asplit=${count}${aOut}`)
+        if (!videoOnly) {
+          const aOut = Array.from({ length: count }, (_, k) => `[ain${inputIdx}_${k}]`).join('')
+          lines.push(`[${inputIdx}:a]asplit=${count}${aOut}`)
+        }
       }
     }
 
@@ -115,15 +118,17 @@ export function buildFilterComplex(
     if (vfx) vParts.push(vfx)
     lines.push(`[${segVLabel[i]}]${vParts.join(',')}[vs${i}]`)
 
-    // Audio: trim → reset pts → speed → volume
-    const aParts = [
-      `atrim=start=${seg.inPoint.toFixed(6)}:end=${seg.outPoint.toFixed(6)}`,
-      'asetpts=PTS-STARTPTS',
-    ]
-    if (speed !== 1.0) aParts.push(buildAtempoChain(speed))
-    const vol = seg.volume
-    if (vol != null && vol !== 1.0) aParts.push(`volume=${vol.toFixed(4)}`)
-    lines.push(`[${segALabel[i]}]${aParts.join(',')}[as${i}]`)
+    if (!videoOnly) {
+      // Audio: trim → reset pts → speed → volume
+      const aParts = [
+        `atrim=start=${seg.inPoint.toFixed(6)}:end=${seg.outPoint.toFixed(6)}`,
+        'asetpts=PTS-STARTPTS',
+      ]
+      if (speed !== 1.0) aParts.push(buildAtempoChain(speed))
+      const vol = seg.volume
+      if (vol != null && vol !== 1.0) aParts.push(`volume=${vol.toFixed(4)}`)
+      lines.push(`[${segALabel[i]}]${aParts.join(',')}[as${i}]`)
+    }
   }
 
   // Build transition lookup keyed by beforeSegmentId
@@ -144,19 +149,19 @@ export function buildFilterComplex(
 
     if (isCut) {
       lines.push(`[${curV}][vs${ni}]concat=n=2:v=1:a=0[vchain${ni}]`)
-      lines.push(`[${curA}][as${ni}]concat=n=2:v=0:a=1[achain${ni}]`)
+      if (!videoOnly) lines.push(`[${curA}][as${ni}]concat=n=2:v=0:a=1[achain${ni}]`)
       cumOutputDur += segDurs[ni]
     } else {
       const tDur = Math.min(t.duration, segDurs[i], segDurs[ni])
       const offset = Math.max(0, cumOutputDur - tDur)
       const xName = XFADE_MAP[t.type] ?? 'fade'
       lines.push(`[${curV}][vs${ni}]xfade=transition=${xName}:duration=${tDur.toFixed(4)}:offset=${offset.toFixed(4)}[vchain${ni}]`)
-      lines.push(`[${curA}][as${ni}]acrossfade=d=${tDur.toFixed(4)}[achain${ni}]`)
+      if (!videoOnly) lines.push(`[${curA}][as${ni}]acrossfade=d=${tDur.toFixed(4)}[achain${ni}]`)
       cumOutputDur += segDurs[ni] - tDur
     }
 
     curV = `vchain${ni}`
-    curA = `achain${ni}`
+    if (!videoOnly) curA = `achain${ni}`
   }
 
   // Adjustment layers: merge all effects and apply to final video output
@@ -169,5 +174,6 @@ export function buildFilterComplex(
     }
   }
 
+  // audioOut is only meaningful when videoOnly=false; callers using videoOnly=true must pass -an.
   return { filterComplex: lines.join(';'), videoOut: curV, audioOut: curA }
 }

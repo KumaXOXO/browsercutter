@@ -119,7 +119,7 @@ export default function ExportModal({ onClose }: Props) {
 
               <div className="rounded-lg p-3" style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)' }}>
                 <p className="text-xs" style={{ color: '#EAB308' }}>
-                  First export loads ~31 MB of FFmpeg WASM from CDN. Subsequent exports are instant.
+                  First export loads ~31 MB of FFmpeg WASM. Subsequent exports are faster.
                 </p>
               </div>
               {saveDirName && (
